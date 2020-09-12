@@ -4,7 +4,7 @@
 // Оставляет числу лишь две цифры после запятой
 double prec(double value) {
 	// Приводим к int64, чтобы избавится от погрешностей double и отрицательных нулей
-	return (double)((long long)round(value * 100.0)) / 100.0;
+	return (double)((long long)round(value * 100)) / 100;
 }
 
 int main(int argc, char** argv) {
@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
 	printf("Quadratic equation %g * x^2 + %g * x + %g ", a, b, c);
 
 	// Проверка деления на ноль
-	if (a == 0.0) {
+	if (a == 0) {
 		double x = prec(-c / b);
 		printf("has one root:\nx = %g.\n", x);
 	} else {
