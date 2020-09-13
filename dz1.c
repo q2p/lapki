@@ -32,15 +32,13 @@ int main(int argc, char** argv) {
 			double x = prec(-b / (2 * a));
 			printf("has one root:\nx = %g.\n", x);
 		} else if (discriminant > 0) {
-			double sqrt_d = sqrt(discriminant);
-			double x1 = prec((-b + sqrt_d) / (2 * a));
-			double x2 = prec((-b - sqrt_d) / (2 * a));
+			double x1 = prec((-b + sqrt(discriminant)) / (2 * a));
+			double x2 = prec((-b - sqrt(discriminant)) / (2 * a));
 			printf("has two roots:\nx1 = %g;\nx2 = %g.\n", x1, x2);
 		} else {
 			printf("has two complex roots:\n");
 			// Дискриминант отрицательный, корни - комплексные
-			double sqrt_d = sqrt(-discriminant);
-			double x_imaginary = prec(sqrt_d / (2 * a)); // Мнимая часть
+			double x_imaginary = prec(sqrt(-discriminant) / (2 * a)); // Мнимая часть
 			if (b != 0) { // Если есть действительная часть
 				double x_real = prec(-b / (2 * a)); // Действительная часть
 				printf("x1 = %g + i*%g;\nx2 = %g - i*%g.\n", x_real, x_imaginary, x_real, x_imaginary);
