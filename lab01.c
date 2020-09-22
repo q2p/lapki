@@ -12,6 +12,6 @@ int main(int argc, char** argv) {
 		string[i] = string[l-i-1];
 		string[l-i-1] = temp;
 	}
-	printf("%s", string);
+	printf("%s\n", string);
 	return 0;
 }
