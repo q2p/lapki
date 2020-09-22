@@ -2,14 +2,16 @@
 #include "string.h"
 
 int main(int argc, char** argv) {
-	char str[20];
-	scanf("%s", str);
-	int l = strlen(str);
+	char string[32];
+	scanf("%s", string);
+	int l = strlen(string);
 	for (int i = 0; i < l / 2; i++) {
-		char t = str[i];
-		str[i] = str[l-i-1];
-		str[l-i-1] = t;
+		// Зеркально переставльяем символы.
+		// Подобный подход работает одновременно с целыми и дробными числами.
+		char temp = string[i];
+		string[i] = string[l-i-1];
+		string[l-i-1] = temp;
 	}
-	printf("%s", str);
+	printf("%s", string);
 	return 0;
 }
