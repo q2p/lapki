@@ -1,14 +1,13 @@
 #include "stdio.h"
 #include "math.h"
 
-char is_prime(int a) {
-	int lim = (int) sqrt(a);
-	printf("-%d\n", lim);
+// Проверяет, является ли число простым
+char is_prime(int number) {
+	// Проверять значения больше sqrt(number) нам не нужно, по свойству умножения
+	int lim = (int) sqrt(number);
 	for (int i = 2; i <= lim; i++) {
-		for (int j = 2; j < i; j++) {
-			if(i % j == 0) {
-				return 0;
-			}
+		if(number % i == 0) {
+			return 0;
 		}
 	}
 	return 1;
