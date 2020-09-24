@@ -1,17 +1,16 @@
 #include "stdio.h"
-#include "string.h"
 
 int main(int argc, char** argv) {
-	char string[32];
-	scanf("%s", string);
-	int l = strlen(string);
-	for (int i = 0; i < l / 2; i++) {
-		// Зеркально переставльяем символы.
-		// Подобный подход работает одновременно с целыми и дробными числами.
-		char temp = string[i];
-		string[i] = string[l-i-1];
-		string[l-i-1] = temp;
-	}
-	printf("%s\n", string);
+	unsigned int value;
+	scanf("%d", &value);
+	do {
+		// Вывод числа посимвольно.
+		// Если вместо вывода использовать промежуточную переменную,
+		// то число `100`, будет выведено не как `001`, а как `1`.
+		// Вывод посимвольно решает эту проблему
+		printf("%d", value % 10);
+		value /= 10;
+	} while(value != 0); // Цикл должен выполниться хотя-бы один раз (на случай, если будет введён 0)
+	printf("\n");
 	return 0;
 }
