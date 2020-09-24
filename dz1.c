@@ -17,15 +17,21 @@ int main(int argc, char** argv) {
 	scanf("%lf", &b);
 	printf("Please enter a  `c` value: ");
 	scanf("%lf", &c);
-	
-	// Выводим получившееся уравнение
-	printf("Quadratic equation %g * x^2 + %g * x + %g ", a, b, c);
 
-	// Проверка деления на ноль
-	if (a == 0) {
-		double x = prec(-c / b);
-		printf("has one root:\nx = %g.\n", x);
+	if (a == 0) { // Проверка деления на ноль
+		if (b == 0) { // Проверка деления на ноль
+			if (c == 0) {
+				printf("Equation 0 = 0 is true.\n");
+			} else {
+				printf("Equation %g = 0 is false.\n", c);
+			}
+		} else {
+			double x = prec(-c / b);
+			printf("Linear equation %g * x + %g = 0 has one root:\nx = %g.\n", x);
+		}
 	} else {
+		printf("Quadratic equation %g * x^2 + %g * x + %g = 0 ", a, b, c);
+
 		double discriminant = b*b - 4 * a * c;
 
 		if (discriminant == 0) {
