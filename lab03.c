@@ -1,11 +1,10 @@
 #include "stdio.h"
-#include "math.h"
 
 // Проверяет, является ли число простым
 char is_prime(int number) {
 	// Проверять значения больше sqrt(number) нам не нужно, по свойству умножения
-	int lim = (int) sqrt(number);
-	for (int i = 2; i <= lim; i++) {
+	// i*i <= number, равносильно i <= sqrt(number)
+	for (int i = 2; i*i <= number; i++) {
 		if(number % i == 0) {
 			return 0;
 		}
