@@ -3,7 +3,7 @@
 unsigned char months_table[2][12] = {
 	{ // Не високосный год
 		31, // Январь
-		28, // Февраль
+		28, // Февраль [28]
 		31, // Март
 		30, // Апрель
 		31, // Май
@@ -17,7 +17,7 @@ unsigned char months_table[2][12] = {
 	},
 	{ // Високосный год
 		31, // Январь
-		29, // Февраль
+		29, // Февраль [29]
 		31, // Март
 		30, // Апрель
 		31, // Май
@@ -43,105 +43,61 @@ unsigned char is_leap_year(unsigned int year) {
 	}
 }
 
-typedef struct {
-	unsigned int  year;
+unsigned int calculate_days() {
+	unsigned int year;
 	unsigned char month;
 	unsigned char day;
-} Date;
-
-Date read_date(char *is_error) {
-	Date ret;
-	scanf("%d %hhd %hhd", &ret.year, &ret.month, &ret.day);
+	scanf("%d %hhd %hhd", &year, &month, &day);
 
 	if (
-		ret.year  < 1 && ret.year  > 10000                                      && // Если год   в пределе [1..10000]
-		ret.month < 1 && ret.month > 12                                         && // Если месяц в пределе [1..12]
-		ret.day   < 1 && ret.day   > months_table[is_leap_year(year)][ret.month-1] // Если день  в пределе [1..(Количество дней в данном месяце)]
+		year  < 1 || year  > 10000                                  || // Если год   не в пределе [1..10000]
+		month < 1 || month > 12                                     || // Если месяц не в пределе [1..12]
+		day   < 1 || day   > months_table[is_leap_year(year)][month-1] // Если день  не в пределе [1..(Количество дней в данном месяце)]
 	) {
-		printf("Date is malformed.")
-		*is_error = 1;
+		printf("Date is malformed.\n");
+		return 0; // 0 - введётая дата содержит не допустимые значия
 	}
 
-	return ret;
-}
+	unsigned int absolute_days = 1; // Начинаем отсчёт с 1, чтобы не вернуть 0, при вводе "1г, 1м, 1д"
 
-unsigned int calculate_days(Date *date) {
-	unsigned int absolute_days = 0;
-
-	for(unsigned int i = 1; i < date->year; i++) {
-		if (is_leap_year(i)) {
+	for(unsigned int i = 1; i < year; i++) {
+		if (is_leap_year(i)) { // Если год високосный
 			absolute_days += 366;
 		} else {
 			absolute_days += 365;
 		}
 	}
 
-	unsigned char leap_year = is_leap_year(date->year);
-
-	for(unsigned int i = 0; i < date->month - 1; i++) {
-		absolute_days += months_table[leap_year][i];
+	unsigned char *months = months_table[is_leap_year(year)]; // Таблица месяцов для текущего года
+	for(unsigned int i = 0; i < month - 1; i++) {
+		absolute_days += months[i];
 	}
 
-	absolute_days += date->day - 1;
-
-	return absolute_days;
-}
-
-
-unsigned int calculate_days2(Date *date) {
-	unsigned int absolute_days = 0;
-
-	unsigned int i = date->year;
-	for(; i > 400; i -= 400) {
-		absolute_days += 366 *  97;
-		absolute_days += 365 * 303;
-	}
-	for(; i > 100; i -= 100) {
-		absolute_days += 366 * 24;
-		absolute_days += 365 * 76;
-	}
-	for(; i > 4; i -= 4) {
-		absolute_days += 366 * 1;
-		absolute_days += 365 * 3;
-	}
-	for(; i > 1; i -= 1) {
-		absolute_days += 365;
-	}
-
-	unsigned char leap_year = is_leap_year(date->year);
-
-	for(unsigned int i = 0; i < date->month - 1; i++) {
-		absolute_days += months_table[leap_year][i];
-	}
-
-	absolute_days += date->day - 1;
+	absolute_days += day - 1;
 
 	return absolute_days;
 }
 
 int main(int argc, char** argv) {
-	char is_error = 0;
-	while(1) {
-		Date date1 = read_date(&is_error);
-		if (is_error)
-			return 1;
-		Date date2 = read_date(&is_error);
-		if (is_error)
-			return 1;
+	unsigned int days1 = calculate_days();
+	if (!days1) // Если введено в дату были введени недопустимые значения
+		return 1;
+	unsigned int days2 = calculate_days();
+	if (!days2) // Если введено в дату были введени недопустимые значения
+		return 1;
 
-		unsigned int days1 = calculate_days(&date1);
-		unsigned int days2 = calculate_days2(&date2);
+	unsigned int differance;
+	if (days2 > days1) {
+		differance = days2 - days1;
+	} else {
+		differance = days1 - days2;
+	}
 
-		unsigned int differance;
-		if (days2 > days1) {
-			differance = days2 - days1;
-		} else {
-			differance = days1 - days2;
-		}
-
-		printf("%d\n%d\n", days1, days2);
-
-		printf("There are %d days between two dates.\n", differance);
+	printf("%d\n%d\n", days1, days2);
+	if (differance == 0) {
+		printf("The dates are the same.\n");
+	} else {
+		printf("There are %d days between the dates.\n", differance - 1);
 	}
 
 	return 0;
