@@ -94,11 +94,7 @@ int main(int argc, char** argv) {
 	}
 
 	printf("%d\n%d\n", days1, days2);
-	if (differance == 0) {
-		printf("The dates are the same.\n");
-	} else {
-		printf("There are %d days between the dates.\n", differance - 1);
-	}
+	printf("There are %d days between the dates.\n", differance);
 
 	return 0;
 }
