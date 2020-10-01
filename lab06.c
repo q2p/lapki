@@ -3,7 +3,7 @@
 unsigned char months_table[2][12] = {
 	{ // Не високосный год
 		31, // Январь
-		28, // Февраль
+		28, // Февраль [28]
 		31, // Март
 		30, // Апрель
 		31, // Май
@@ -17,7 +17,7 @@ unsigned char months_table[2][12] = {
 	},
 	{ // Високосный год
 		31, // Январь
-		29, // Февраль
+		29, // Февраль [29]
 		31, // Март
 		30, // Апрель
 		31, // Май
@@ -49,40 +49,55 @@ unsigned int calculate_days() {
 	unsigned char day;
 	scanf("%d %hhd %hhd", &year, &month, &day);
 
-	unsigned int epoch = 0;
+	if (
+		year  < 1 || year  > 10000                                  || // Если год   не в пределе [1..10000]
+		month < 1 || month > 12                                     || // Если месяц не в пределе [1..12]
+		day   < 1 || day   > months_table[is_leap_year(year)][month-1] // Если день  не в пределе [1..(Количество дней в данном месяце)]
+	) {
+		printf("Date is malformed.\n");
+		return 0; // 0 - введётая дата содержит не допустимые значия
+	}
 
-	for(unsigned int i = 1; i <= year; i++) {
-		if (is_leap_year(i)) {
-			epoch += 366;
+	unsigned int absolute_days = 1; // Начинаем отсчёт с 1, чтобы не вернуть 0, при вводе "1г, 1м, 1д"
+
+	for(unsigned int i = 1; i < year; i++) {
+		if (is_leap_year(i)) { // Если год високосный
+			absolute_days += 366;
 		} else {
-			epoch += 365;
+			absolute_days += 365;
 		}
 	}
 
-	unsigned char leap_year = is_leap_year(year);
-
+	unsigned char *months = months_table[is_leap_year(year)]; // Таблица месяцов для текущего года
 	for(unsigned int i = 0; i < month - 1; i++) {
-		epoch += months_table[leap_year][i];
+		absolute_days += months[i];
 	}
 
-	epoch += day - 1;
+	absolute_days += day - 1;
 
-	return epoch;
+	return absolute_days;
 }
 
 int main(int argc, char** argv) {
-	while(1) {
-		unsigned int days1 = calculate_days();
-		unsigned int days2 = calculate_days();
+	unsigned int days1 = calculate_days();
+	if (!days1) // Если в дату были введены недопустимые значения
+		return 1;
+	unsigned int days2 = calculate_days();
+	if (!days2) // Если в дату были введены недопустимые значения
+		return 1;
 
-		unsigned int differance;
-		if (days2 > days1) {
-			differance = days2 - days1;
-		} else {
-			differance = days1 - days2;
-		}
+	unsigned int differance;
+	if (days2 > days1) {
+		differance = days2 - days1;
+	} else {
+		differance = days1 - days2;
+	}
 
-		printf("There are %d days between two dates.\n", differance);
+	printf("%d\n%d\n", days1, days2);
+	if (differance == 0) {
+		printf("The dates are the same.\n");
+	} else {
+		printf("There are %d days between the dates.\n", differance - 1);
 	}
 
 	return 0;
