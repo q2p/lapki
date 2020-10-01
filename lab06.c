@@ -68,7 +68,7 @@ unsigned int calculate_days() {
 		}
 	}
 
-	unsigned char *months = months_table[is_leap_year(year)]; // Таблица месяцов для текущего года
+	unsigned char *months = months_table[is_leap_year(year)]; // Таблица месяцев для текущего года
 	for(unsigned int i = 0; i < month - 1; i++) {
 		absolute_days += months[i];
 	}
