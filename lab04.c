@@ -1,59 +1,148 @@
 #include "stdio.h"
 
-// Выводит n-ую цифру в последовательности натуральных чисел (Счёт идёт он 0, то есть 0->1, 1->2, 9->1, 10->0)
-char digit(int pos) {
-	int seq_len = 9; // Количество чисел в цепочке порядка
-	int num_len = 1; // Количество цифр в числах порядка
-	int seq_off = 1; // Минимальное число в цепи порядка
-	while(1) {
-		if (pos < num_len * seq_len) { // Если указатель находится в пределах данного порядка
-			int number = seq_off + pos / num_len; // Находим число на данной позиции
-			int digit  = pos % num_len; // Находим цифру в данном числе
-			for(int i = num_len - digit - 1; i != 0; i--) { // Отбрасываем ненужные цифры в числе справа
-				number /= 10;
-			}
-			return number % 10; // Выводим одну цифру справа
-		} else { // Если указатель выходит за пределы данного порядка
-			pos -= seq_len * num_len; // Смещаем указатель на количество цифр в порядке
-			num_len++; // Увеличиваем количество цифр в числах порядка
-			seq_len *= 10; // Увеличиваем количество чисел в цепочке порядка
-			seq_off *= 10; // Увеличиваем минимальное число в цепи порядка
-		}
+unsigned char months_table[2][12] = {
+	{ // Не високосный год
+		31, // Январь
+		28, // Февраль
+		31, // Март
+		30, // Апрель
+		31, // Май
+		30, // Июнь
+		31, // Июль
+		31, // Август
+		30, // Сентябрь
+		31, // Октябрь
+		30, // Ноябрь
+		31  // Декабрь
+	},
+	{ // Високосный год
+		31, // Январь
+		29, // Февраль
+		31, // Март
+		30, // Апрель
+		31, // Май
+		30, // Июнь
+		31, // Июль
+		31, // Август
+		30, // Сентябрь
+		31, // Октябрь
+		30, // Ноябрь
+		31  // Декабрь
+	}
+};
+
+unsigned char is_leap_year(unsigned int year) {
+	if (year % 400 == 0) {
+		return 1;
+	} else if (year % 100 == 0) {
+		return 0;
+	} else if (year % 4 == 0) {
+		return 1;
+	} else {
+		return 0;
 	}
 }
 
-// === Функции для отладки ===
-// Можно вызвать debug() для демонстрации того, что все числа выводятся правильно
+typedef struct {
+	unsigned int  year;
+	unsigned char month;
+	unsigned char day;
+} Date;
 
-char debug_seq(int *a, int digits, int start, int end) {
-	for(int i = start; i != end; i++) {
-		for(int d = 0; d != digits; d++) {
-			printf("%d", digit((*a)++));
-		}
-		printf(" ");
+Date read_date(char *is_error) {
+	Date ret;
+	scanf("%d %hhd %hhd", &ret.year, &ret.month, &ret.day);
+
+	if (
+		ret.year  < 1 && ret.year  > 10000                                      && // Если год   в пределе [1..10000]
+		ret.month < 1 && ret.month > 12                                         && // Если месяц в пределе [1..12]
+		ret.day   < 1 && ret.day   > months_table[is_leap_year(year)][ret.month-1] // Если день  в пределе [1..(Количество дней в данном месяце)]
+	) {
+		printf("Date is malformed.")
+		*is_error = 1;
 	}
-	printf("\n");
+
+	return ret;
+}
+
+unsigned int calculate_days(Date *date) {
+	unsigned int absolute_days = 0;
+
+	for(unsigned int i = 1; i < date->year; i++) {
+		if (is_leap_year(i)) {
+			absolute_days += 366;
+		} else {
+			absolute_days += 365;
+		}
+	}
+
+	unsigned char leap_year = is_leap_year(date->year);
+
+	for(unsigned int i = 0; i < date->month - 1; i++) {
+		absolute_days += months_table[leap_year][i];
+	}
+
+	absolute_days += date->day - 1;
+
+	return absolute_days;
 }
 
 
-void debug() {
-	printf("Debug sequence:\n");
-	int a = 0;
-	debug_seq(&a, 1,   0,    9); // Числа от    1 до    9
-	debug_seq(&a, 2,   9,   99); // Числа от   10 до   99
-	debug_seq(&a, 3,  99,  999); // Числа от  100 до  999
-	debug_seq(&a, 4, 999, 9999); // Числа от 1000 до 9999
-}
+unsigned int calculate_days2(Date *date) {
+	unsigned int absolute_days = 0;
 
-// ===========================
+	unsigned int i = date->year;
+	for(; i > 400; i -= 400) {
+		absolute_days += 366 *  97;
+		absolute_days += 365 * 303;
+	}
+	for(; i > 100; i -= 100) {
+		absolute_days += 366 * 24;
+		absolute_days += 365 * 76;
+	}
+	for(; i > 4; i -= 4) {
+		absolute_days += 366 * 1;
+		absolute_days += 365 * 3;
+	}
+	for(; i > 1; i -= 1) {
+		absolute_days += 365;
+	}
+
+	unsigned char leap_year = is_leap_year(date->year);
+
+	for(unsigned int i = 0; i < date->month - 1; i++) {
+		absolute_days += months_table[leap_year][i];
+	}
+
+	absolute_days += date->day - 1;
+
+	return absolute_days;
+}
 
 int main(int argc, char** argv) {
-	printf("Enter digit's position to be printed:\n");
+	char is_error = 0;
+	while(1) {
+		Date date1 = read_date(&is_error);
+		if (is_error)
+			return 1;
+		Date date2 = read_date(&is_error);
+		if (is_error)
+			return 1;
 
-	int pos;
-	scanf("%d", &pos);
+		unsigned int days1 = calculate_days(&date1);
+		unsigned int days2 = calculate_days2(&date2);
 
-	printf("The digit at %d place in a sequence is %d.\n", pos, digit(pos));
+		unsigned int differance;
+		if (days2 > days1) {
+			differance = days2 - days1;
+		} else {
+			differance = days1 - days2;
+		}
+
+		printf("%d\n%d\n", days1, days2);
+
+		printf("There are %d days between two dates.\n", differance);
+	}
 
 	return 0;
 }
