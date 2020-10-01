@@ -80,10 +80,10 @@ unsigned int calculate_days() {
 
 int main(int argc, char** argv) {
 	unsigned int days1 = calculate_days();
-	if (!days1) // Если введено в дату были введени недопустимые значения
+	if (!days1) // Если в дату были введены недопустимые значения
 		return 1;
 	unsigned int days2 = calculate_days();
-	if (!days2) // Если введено в дату были введени недопустимые значения
+	if (!days2) // Если в дату были введены недопустимые значения
 		return 1;
 
 	unsigned int differance;
