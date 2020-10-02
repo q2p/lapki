@@ -10,11 +10,13 @@ int main(int argc, char** argv) {
 
 	scanf("%d", &len);
 
+	// Проверка на выход за пределы массива
 	if (len > N) {
 		printf("Length is too big.");
 		return 1;
 	}
 
+	// Заполняем массив случайными числами
 	for (int i = 0; i != len; i++) {
 		array[i] = (float) rand() / (float) RAND_MAX;
 	}
