@@ -27,8 +27,6 @@ int main(int argc, char** argv) {
 	char swapped;
 	do {
 		swapped = 0;
-		float* v1 = &array[i-1];
-		float* v2 = &array[i  ];
 		for (int i = 1; i != len; i++) {
 			float* v1 = &array[i-1];
 			float* v2 = &array[i  ];
