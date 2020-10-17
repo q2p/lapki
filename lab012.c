@@ -1,20 +1,20 @@
 #include <string.h>
 #include <stdio.h>
 
+// Максимальное количество знаков после запятой
 int fraction_length_max;
 
 // Входное число
 char source[64];
-char sp = 0;
-// Исходное основание системы
-int base_form;
+int source_base; // Основание системы
+char sp = 0; // Индекс символа для чтения
 
 // Выводимый результат
 char target[64];
-char tp = 0;
-// Желаемое основание системы
-int base_to;
+int target_base; // Основание системы
+char tp = 0; // Индекс символа для записи
 
+// Таблицы для преобразований число->символ и символ->число
 const char digits[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
 unsigned char table[256];
 void initialize_lookup_table() {
@@ -47,15 +47,15 @@ void reverse_string(char* string, unsigned char length) {
 void integer_to_string(unsigned long long integer) {
 	do {
 		// Записываем младшую цифру
-		char rem = integer % base_to;
+		char rem = integer % target_base;
 		target[tp] = digits[rem];
 		tp++;
 
 		// Сдвигаем число
-		integer /= base_to;
+		integer /= target_base;
 	} while (integer != 0);
 
-	// Разворачиваем строку, чтобы младная цифра была в конце строки
+	// Разворачиваем строку, чтобы младшая цифра была в конце строки
 	reverse_string(target, tp);
 }
 
@@ -63,7 +63,9 @@ void integer_to_string(unsigned long long integer) {
 char append_fractional() {
 	// Множитель для отделения дробной части от целой
 	int multiplier = 1;
+	// Дробная часть
 	int temp = 0;
+
 	while(1) {
 		char c = source[sp];
 		sp++;
@@ -75,13 +77,13 @@ char append_fractional() {
 		unsigned char value = table[(unsigned char) c];
 
 		// Если цифра выходит за пределы основания или введён недопустимый символ
-		if (value >= base_form) {
+		if (value >= source_base) {
 			printf("Error: Digit %c is not allowed.\n", c);
 			return 1;
 		}
 
-		temp = temp * base_form + value;
-		multiplier *= base_form;
+		temp = temp * source_base + value;
+		multiplier *= source_base;
 	}
 
 	// Если дробная часть = 0
@@ -101,7 +103,7 @@ char append_fractional() {
 
 	// Пока не дошли до допустимого количества знаков после запятой
 	while(tp < limit) {
-		temp *= base_to;
+		temp *= target_base;
 		char decimal = temp / multiplier;
 		temp %= multiplier;
 
@@ -120,17 +122,17 @@ char append_fractional() {
 char read_input() {
 	printf("Please enter: Initial base, Target base, Length of fractional part, Number in initial base...\n");
 
-	scanf("%d%d%d%63s", &base_form, &base_to, &fraction_length_max, source);
+	scanf("%d%d%d%63s", &source_base, &target_base, &fraction_length_max, source);
 
-	if (base_form < 2 || base_form > 16) {
+	if (source_base < 2 || source_base > 16) {
 		printf("Error: Initial base must be in range of [2..16].\n");
 		return 1;
 	}
-	if (base_to < 2 || base_to > 16) {
+	if (target_base < 2 || target_base > 16) {
 		printf("Error: Target base must be in range of [2..16].\n");
 		return 1;
 	}
-	if (fraction_length_max < 1 || base_to > 10) {
+	if (fraction_length_max < 1 || target_base > 10) {
 		printf("Error: Fraction length must be in range of [1..10].\n");
 		return 1;
 	}
@@ -176,13 +178,13 @@ int main(int argc, char** argv) {
 		unsigned char value = table[(unsigned char) c];
 
 		// Если цифра выходит за пределы основания или введён недопустимый символ
-		if (value >= base_form) {
+		if (value >= source_base) {
 			printf("Error: Digit %c is not allowed.\n", c);
 			return 1;
 		}
 
 		// Прибавляем к числу
-		integer = integer * base_form + value;
+		integer = integer * source_base + value;
 	}
 
 	// Закрываем получившуюся строку
