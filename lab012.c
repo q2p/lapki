@@ -30,6 +30,27 @@ void initialize_lookup_table() {
 	}
 }
 
+char read_input() {
+	printf("Please enter: Initial base, Target base, Length of fractional part, Number in initial base...\n");
+
+	scanf("%d%d%d%63s", &source_base, &target_base, &fraction_length_max, source);
+
+	if (source_base < 2 || source_base > 16) {
+		printf("Error: Initial base must be in range of [2..16].\n");
+		return 1;
+	}
+	if (target_base < 2 || target_base > 16) {
+		printf("Error: Target base must be in range of [2..16].\n");
+		return 1;
+	}
+	if (fraction_length_max < 1 || fraction_length_max > 10) {
+		printf("Error: Fraction length must be in range of [1..10].\n");
+		return 1;
+	}
+
+	return 0;
+}
+
 void swap(char* c1, char* c2) {
 	*c1 ^= *c2;
 	*c2 ^= *c1;
@@ -44,7 +65,7 @@ void reverse_string(char* string, unsigned char length) {
 }
 
 // Функция записи целой части
-void integer_to_string(unsigned long long integer) {
+void write_decimal_part(unsigned long long integer) {
 	do {
 		// Записываем младшую цифру
 		char rem = integer % target_base;
@@ -59,12 +80,88 @@ void integer_to_string(unsigned long long integer) {
 	reverse_string(target, tp);
 }
 
-// Функция обработки дробной части
-char append_fractional() {
+// Функция убирает не значащие нули после запятой
+void remove_trailing_zeroes() {
+	char i = tp-1;
+	while(1) {
+		char c = target[i];
+		if (c == '.') {
+			tp = i;
+			break;
+		} else if(c != '0') {
+			tp = i+1;
+			break;
+		}
+		i--;
+	}
+}
+
+void write_fractional_part(unsigned long long fraction, unsigned long long multiplier) {
+	// Добавляем точку
+	target[tp] = '.';
+	tp++;
+
+	// Сколько знаков после запятой записывать
+	int limit = sizeof(target) - 1;
+	if (limit > tp + fraction_length_max) {
+		limit = tp + fraction_length_max;
+	}
+
+	// Пока не дошли до допустимого количества знаков после запятой
+	while(tp < limit) {
+		fraction *= target_base;
+		char decimal = fraction / multiplier;
+		fraction %= multiplier;
+
+		target[tp] = digits[decimal];
+		tp++;
+	}
+}
+
+int main(int argc, char** argv) {
+	// Инициализируем таблицу для конверсии систем счисления
+	initialize_lookup_table();
+
+	// Получаем ввод пользователя
+	char error = read_input();
+	// Если произошла ошибка
+	if (error) {
+		return error;
+	}
+
+	// Переменная для хранения целой части
+	unsigned long long temp = 0;
+
+	while(1) {
+		char c = source[sp];
+
+		if (c == '\0') { // Конец строки
+			break;
+		} else if (c == '.') { // Конец целой части
+			sp++;
+			break;
+		}
+
+		// Конвертируем цифру из символа в число
+		unsigned char value = table[(unsigned char) c];
+
+		// Если цифра выходит за пределы основания или введён недопустимый символ
+		if (value >= source_base) {
+			printf("Error: Digit %c is not allowed.\n", c);
+			return 1;
+		}
+
+		// Прибавляем к числу
+		temp = temp * source_base + value;
+	}
+	
+	// Записываем целую часть
+	write_decimal_part(temp);
+
 	// Множитель для отделения дробной части от целой
-	int multiplier = 1;
+	unsigned long long multiplier = 1;
 	// Дробная часть
-	int temp = 0;
+	temp = 0;
 
 	while(1) {
 		char c = source[sp];
@@ -86,106 +183,11 @@ char append_fractional() {
 		multiplier *= source_base;
 	}
 
-	// Если дробная часть = 0
-	if (temp == 0) {
-		return 0;
-	}
+	// Записываем дробную часть
+	write_fractional_part(temp, multiplier);
 
-	// Добавляем точку
-	target[tp] = '.';
-	tp++;
-
-	// Сколько знаков после запятой записывать
-	int limit = sizeof(target) - 1;
-	if (limit > tp + fraction_length_max) {
-		limit = tp + fraction_length_max;
-	}
-
-	// Пока не дошли до допустимого количества знаков после запятой
-	while(tp < limit) {
-		temp *= target_base;
-		char decimal = temp / multiplier;
-		temp %= multiplier;
-
-		target[tp] = digits[decimal];
-		tp++;
-
-		// Если дробная часть кончилась
-		if(temp == 0) {
-			break;
-		}
-	}
-
-	return 0;
-}
-
-char read_input() {
-	printf("Please enter: Initial base, Target base, Length of fractional part, Number in initial base...\n");
-
-	scanf("%d%d%d%63s", &source_base, &target_base, &fraction_length_max, source);
-
-	if (source_base < 2 || source_base > 16) {
-		printf("Error: Initial base must be in range of [2..16].\n");
-		return 1;
-	}
-	if (target_base < 2 || target_base > 16) {
-		printf("Error: Target base must be in range of [2..16].\n");
-		return 1;
-	}
-	if (fraction_length_max < 1 || target_base > 10) {
-		printf("Error: Fraction length must be in range of [1..10].\n");
-		return 1;
-	}
-
-	return 0;
-}
-
-int main(int argc, char** argv) {
-	// Инициализируем таблицу для конверсии систем счисления
-	initialize_lookup_table();
-
-	// Получаем ввод пользователя
-	char error = read_input();
-	// Если произошла ошибка
-	if (error) {
-		return error;
-	}
-
-	// Переменная для хранения целой части
-	unsigned long long integer = 0;
-
-	while(1) {
-		char c = source[sp];
-		sp++;
-
-		if (c == '\0') { // Конец строки
-			// Записываем целое число
-			integer_to_string(integer);
-			break;
-		} else if (c == '.') { // Конец целой части
-			// Записываем целую часть
-			integer_to_string(integer);
-			// Обрабатываем дробную часть
-			char error = append_fractional();
-			// Если произошла ошибка
-			if (error) {
-				return 1;
-			}
-			break;
-		}
-
-		// Конвертируем цифру из символа в число
-		unsigned char value = table[(unsigned char) c];
-
-		// Если цифра выходит за пределы основания или введён недопустимый символ
-		if (value >= source_base) {
-			printf("Error: Digit %c is not allowed.\n", c);
-			return 1;
-		}
-
-		// Прибавляем к числу
-		integer = integer * source_base + value;
-	}
+	// Убираем не значащие нули
+	remove_trailing_zeroes();
 
 	// Закрываем получившуюся строку
 	target[tp] = '\0';
