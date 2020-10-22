@@ -140,6 +140,8 @@ int main(int argc, char** argv) {
 		} else if (c == '.') { // Конец целой части
 			sp++;
 			break;
+		} else {
+			sp++;
 		}
 
 		// Конвертируем цифру из символа в число
