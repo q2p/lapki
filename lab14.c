@@ -42,7 +42,7 @@ void debug_swap_int(int a, int b) {
 
 void debug_swap_str(char* a, char* b) {
 	printf("%s %s <=> ", a, b);
-	swap_ptr((void*) &a, (void*) &b);
+	swap_ptr((void**) &a, (void**) &b);
 	printf("%s %s\n", a, b);
 }
 
