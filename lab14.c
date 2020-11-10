@@ -34,10 +34,10 @@ void swap_ptr(void** a, void** b) {
 	*((uintptr_t*) a) ^= *((uintptr_t*) b);
 }
 
-void debug_swap_int(unsigned int a, unsigned int b) {
-	printf("(%04x, %04x) <=> ", a, b);
+void debug_swap_int(int a, int b) {
+	printf("(%4d, %4d) <=> ", a, b);
 	swap_int(&a, &b);
-	printf("(%04x, %04x)\n", a, b);
+	printf("(%4d, %4d)\n", a, b);
 }
 
 void debug_swap_str(char* a, char* b) {
@@ -47,9 +47,9 @@ void debug_swap_str(char* a, char* b) {
 }
 
 int main(int argc, char** argv) {
-	debug_swap_int(0x152f, 0xb69c);
-	debug_swap_int(0xd4b3, 0x4948);
-	debug_swap_int(0xb349, 0x4817);
+	debug_swap_int( 550, 8390);
+	debug_swap_int(5805, 7360);
+	debug_swap_int(2103,  312);
 	
 	debug_swap_str("Twilight", "Sparkle");
 	debug_swap_str("Shrek", "Donkey");
