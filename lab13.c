@@ -383,10 +383,10 @@ void print_pi_up_to(uint16_t prescision) {
 
 void print_fraction(String* c, String* z, uint8_t digits) {
 	while(digits--) {
-		big_mul_one_place(&c, 10);
+		big_mul_one_place(c, 10);
 		uint8_t times = 0;
-		while(big_greater(&c, &z)) {
-			big_sub(&c, &z);
+		while(big_greater(c, z)) {
+			big_sub(c, z);
 			times++;
 		}
 		printf("%d", times);
