@@ -3,14 +3,21 @@
 #include <stdio.h>
 #include <stdint.h>
 
-typedef struct __STRING {
-	void* ptr;
-	size_t len;
-	size_t capacity;
-} String;
+// === Работа с динамическими массивами ===
 
-String vec_new(size_t starting_capacity) {
-	String s;
+/// Динамический массив
+typedef struct __VEC {
+	/// Указательн на начало содержимого массива
+	void* ptr;
+	/// Количество байт используемых массивом
+	size_t len;
+	/// Количество памяти, занимаемой массивом (вместимость)
+	size_t capacity;
+} Vec;
+
+/// Создаёт динамический массив с заданой вместимостью
+Vec vec_new(size_t starting_capacity) {
+	Vec s;
 	if(starting_capacity != 0) {
 		s.ptr = malloc(starting_capacity);
 	} else {
@@ -21,25 +28,20 @@ String vec_new(size_t starting_capacity) {
 	return s;
 }
 
-String str_new(size_t starting_capacity) {
-	if (starting_capacity == 0) {
-		starting_capacity = 1;
-	}
-	String s = vec_new(starting_capacity);
-	s.len = 1;
-	*((char*)s.ptr) = '\0';
-	return s;
-}
-
-void string_free(String* vec) {
+/// Освобождает динамический массив
+void vec_free(Vec* vec) {
 	if(vec->ptr) {
 		free(vec->ptr);
 	}
 }
 
-void vec_reserve(String* vec, size_t additional) {
+/// Резервирует `additional` байт для записи в динамический массив
+void vec_reserve(Vec* vec, size_t additional) {
 	size_t req = vec->len+additional;
 	if (req > vec->capacity) {
+		// Для экономии памяти, мы увеличиваем вместимость массива в 1.5 раза,
+		// что уменьшает количество аллокаций, но при этом не съедает память
+		// так же быстро как множитель 2.0
 		vec->capacity = req + req / 2;
 		if(vec->ptr) {
 			vec->ptr = realloc(vec->ptr, vec->capacity);
@@ -49,47 +51,53 @@ void vec_reserve(String* vec, size_t additional) {
 	}
 }
 
-void vec_copy(String* to, String* from) {
+/// Копирует значащие байты из `from` в `to`
+void vec_copy(Vec* to, Vec* from) {
 	to->len = 0;
 	vec_reserve(to, from->len);
 	to->len = from->len;
 	memcpy(to->ptr, from->ptr, from->len);
 }
 
-void vec_push(String* vec, const void* value, size_t len) {
+/// Записывает `len` байт по указателю `value` в `vec`
+void vec_push(Vec* vec, const void* value, size_t len) {
 	vec_reserve(vec, len);
 	memcpy(vec->ptr+vec->len, value, len);
 	vec->len += len;
 }
 
-void string_push(String* vec, char value) {
+/// Отбрасывает незначащие байты и уменьшает объём занимаемый массивом
+void vec_shrink(Vec* vec) {
+	if (vec->ptr) {
+		vec->capacity = vec->len;
+		vec->ptr = realloc(vec->ptr, vec->capacity);
+	}
+}
+
+// Функции для работы со строками, используя динамические массивы
+
+/// Создаёт пустую строку с терминирующим нулём
+Vec str_new(size_t starting_capacity) {
+	if (starting_capacity == 0) {
+		starting_capacity = 1;
+	}
+	Vec s = vec_new(starting_capacity);
+	s.len = 1;
+	*((char*)s.ptr) = '\0';
+	return s;
+}
+
+/// Добавляет символ `value` в конец строки
+void string_push(Vec* vec, char value) {
 	vec_reserve(vec, 1);
 	((char*)vec->ptr)[vec->len-1] = value;
 	((char*)vec->ptr)[vec->len  ] = '\0';
 	vec->len++;
 }
 
-void string_concat(String* vec, char* append) {
-	size_t sl = strlen(append);
-	vec_reserve(vec, sl);
-	memcpy(vec->ptr + vec->len - 1, append, sl + 1);
-	vec->len = vec->len + sl;
-}
-
-char* string_idx(String* vec, size_t idx) {
-	if (idx >= vec->len - 1) {
-		return NULL;
-	} else {
-		return vec->ptr+idx;
-	}
-}
-
-char* string_get_str(String* vec) {
-	return vec->ptr;
-}
-
-void string_push_int(String* vec, unsigned int value) {
-	char old_len = vec->len;
+/// Добавляет число `value` в конец строки
+void string_push_int(Vec* vec, unsigned int value) {
+	size_t old_len = vec->len;
 	do {
 		string_push(vec, '0' + (value % 10));
 		value /= 10;
@@ -107,73 +115,56 @@ void string_push_int(String* vec, unsigned int value) {
 	}
 }
 
-void string_shrink(String* vec) {
-	vec->capacity = vec->len;
-	vec->ptr = realloc(vec->ptr, vec->capacity);
-}
+// === Вычисление Фиббоначи ===
 
-int fibonacci(int number) {
-	int num1 = 0;
-	int num2 = 1;
-	int next = 1;
- 
-	for (int i = 0 ; i < number-1 ; ++i) {
-		next = num1 + num2;
-		num1 = num2;
-		num2 = next;
-	}
-	return next;
-}
+unsigned int fibbonacci_prev = 1;
+unsigned int fibbonacci_curr = 1;
 
-int fibbonacci_prev = 1;
-int fibbonacci_curr = 1;
-
-void fibbonacci_push(String* str, int how_much) {
-	while (how_much) {
+/// Записывает следующие N чисел Фиббоначи в строку
+void fibbonacci_push(Vec* str, unsigned int how_many) {
+	while (how_many) {
 		string_push_int(str, fibbonacci_curr);
 
-		int next = fibbonacci_prev + fibbonacci_curr;
+		unsigned int next = fibbonacci_prev + fibbonacci_curr;
 		fibbonacci_prev = fibbonacci_curr;
 		fibbonacci_curr = next;
 
-		how_much--;
+		how_many--;
 	}
 }
 
-unsigned long long gcd(unsigned long long n1, unsigned long long n2) {
-	while(n1 != n2) {
-		if(n1 > n2)
-			n1 -= n2;
-		else
-			n2 -= n1;
-	}
+// === Длинная арифметика ===
 
-	return n1;
-}
-
-typedef uint32_t BT;
-typedef uint64_t OT;
+// Система счисления
 #define BASE 0x10000000
-const uint8_t zero = 0;
+/// Базовый тип (цифра)
+typedef uint32_t BT;
+/// Тип способный вместить `BASE * BASE`
+typedef uint64_t OT;
 
-void make_same_size(String* a, String* b) {
+/// Добавляет незначащие нули, чтобы переменные имели одинаковое количество цифр
+void big_make_same_size(Vec* a, Vec* b) {
 	if (b->len < a->len) {
-		String* t = a;
+		Vec* t = a;
 		a = b;
 		b = t;
 	}
-	while(a->len != b->len) {
-		vec_push(a, &zero, 1);
-	}
+	
+	size_t additional = b->len - a->len;
+	vec_reserve(a, additional);
+	memset(a->ptr + a->len, 0, additional);
+	a->len = b->len;
 }
 
-void big_trim(String* big) {
+/// Отбрасывает незначащие нули
+void big_trim(Vec* big) {
 	while(big->len > sizeof(BT) && *(BT*)(big->ptr+big->len-sizeof(BT)) == 0) {
 		big->len -= sizeof(BT);
 	}
 }
 
-String big_set(String* big, uint64_t value) {
+/// Заводит в `big` значение `value`
+Vec big_set(Vec* big, uint64_t value) {
 	big->len = 0;
 	do {
 		BT place = value % BASE;
@@ -182,40 +173,9 @@ String big_set(String* big, uint64_t value) {
 	} while(value != 0);
 }
 
-String big_new(uint64_t value) {
-	String big = vec_new(1);
-
-	big_set(&big, value);
-
-	return big;
-}
-
-String big_to_string(String* big) {
-	String ret = str_new(1);
-	
-	for(int i = 0; i != big->len; i += sizeof(BT)) {
-		BT v = *(BT*)(big->ptr + i);
-		for(int j = 0; j != 2; j++) {
-			string_push(&ret, '0' + v % 10);
-			v /= 10;
-		}
-	}
-
-	char* a = ret.ptr;
-	char* b = ret.ptr + ret.len - 2;
-	while (a < b) {
-		*a ^= *b;
-		*b ^= *a;
-		*a ^= *b;
-		a++;
-		b--;
-	}
-
-	return ret;
-}
-
-uint8_t big_greater(String* a, String* b) {
-	make_same_size(a, b);
+/// Возвращает 1, если `a > b`, иначе 0
+uint8_t big_greater(Vec* a, Vec* b) {
+	big_make_same_size(a, b);
 
 	for(size_t i = a->len; i != 0; i -= sizeof(BT)) {
 		size_t off = i - sizeof(BT);
@@ -232,16 +192,9 @@ uint8_t big_greater(String* a, String* b) {
 	return 0;
 }
 
-void big_print(String* big) {
-	String tp = big_to_string(big);
-	
-	printf("%s\n", (char*) tp.ptr);
-
-	string_free(&tp);
-}
-
-void big_add(String* to, String* operand) {
-	make_same_size(to, operand);
+/// Складывает два числа, эквивалентно `to += operand`
+void big_add(Vec* to, Vec* operand) {
+	big_make_same_size(to, operand);
 
 	BT carry = 0;
 	for(size_t i = 0; i != to->len; i += sizeof(BT)) {
@@ -254,8 +207,9 @@ void big_add(String* to, String* operand) {
 	}
 }
 
-void big_sub(String* to, String* operand) {
-	make_same_size(to, operand);
+/// Вычитает два числа, эквивалентно `to -= operand`
+void big_sub(Vec* to, Vec* operand) {
+	big_make_same_size(to, operand);
 
 	BT carry = 0;
 	for(size_t i = 0; i != to->len; i += sizeof(BT)) {
@@ -267,7 +221,8 @@ void big_sub(String* to, String* operand) {
 	big_trim(to);
 }
 
-void big_mul(String* to, String* a, String* b) {
+/// Перемножает два числа, эквивалентно `to = a * b`
+void big_mul(Vec* to, Vec* a, Vec* b) {
 	to->len = 0;
 	size_t nl = (a->len + b->len) * sizeof(BT);
 	
@@ -293,7 +248,8 @@ void big_mul(String* to, String* a, String* b) {
 	big_trim(to);
 }
 
-void big_mul_one_place(String* a, BT b) {
+/// Умножает `a` на цифру `b`, эквивалентно `a *= b`
+void big_mul_one_place(Vec* a, BT b) {
 	BT carry = 0;
 	for(size_t i = 0; i != a->len; i += sizeof(BT)) {
 		BT* av = (BT*)(a->ptr + i);
@@ -306,53 +262,44 @@ void big_mul_one_place(String* a, BT b) {
 	}
 }
 
-void print_pi_up_to2(uint8_t prescision) {
-	// C = 426880 * sqrt(10005) ~= 42698670.66633339
-	const double C = 42698670.66633339;
-
-	uint64_t L = 13591409;
-	const uint64_t L_inc = 545140134;
-
-	double X = 1;
-	const double X_mul = -262537412640768000;
-
-	uint32_t M_c = 1;
-	uint32_t M_z = 1;
-
-	double pi_c = 1;
-	double pi_z = 1;
-	for (uint8_t q = 0; q != prescision; q++) {
-		uint32_t q13 = q+1;
-		q13 = q13 * q13 * q13;
-		uint32_t _12q = 12 * q;
-
-		double nz = X * M_z;
-
-		pi_c = pi_c * nz + (M_c * L) * pi_z;
-		pi_z = pi_z * nz;
-
-		L += L_inc;
-		X *= X_mul;
-		M_c *= ((_12q + 2)*(_12q + 6)*(_12q + 10));
-		M_z *= q13;
+/// Выводит правильную дробь `c/z` с точностью до `digits` знаков после запятой
+void big_print_fraction(Vec* c, Vec* z, uint8_t digits) {
+	while(digits--) {
+		big_mul_one_place(c, 10);
+		uint8_t times = 0;
+		while(big_greater(c, z)) {
+			big_sub(c, z);
+			times++;
+		}
+		printf("%d", times);
 	}
-
-	double pi = C * (pi_z / pi_c);
-
-	printf("with acc %d, pi ~= %1.60lf\n", prescision, pi);
 }
 
-void print_pi_up_to(uint16_t prescision) {
-	String c = big_new(0);
-	String z = big_new(1);
+// === Вычисление PI ===
+
+/// Вычисляет PI, производя `prescision` итераций
+///
+/// Кол-во итераций   Точность
+///               1   3.1
+///              10   3.141
+///             100   3.141592
+///            1000   3.141592653
+///           10000   3.141592653589
+///          100000   3.1415926535897
+///
+void print_pi_up_to(unsigned int prescision) {
+	Vec c = vec_new(1);
+	Vec z = vec_new(1);
+	Vec t = vec_new(1);
+	Vec nz_big = vec_new(1);
 
 	uint64_t prev = 2;
 	uint8_t sign = 1;
 
-	String t = vec_new(1);
-	String nz_big = vec_new(1);
+	big_set(&c, 0);
+	big_set(&z, 1);
 
-	for (uint16_t q = 0; q != prescision; q++) {
+	for (unsigned int q = prescision; q != 0; q--) {
 		uint64_t nz = ((prev++) >> 1) * prev++ * (prev >> 1);
 		big_set(&nz_big, nz);
 
@@ -370,68 +317,53 @@ void print_pi_up_to(uint16_t prescision) {
 		vec_copy(&c, &t);
 	}
 
-	string_free(&nz_big);
-	string_free(&t);
+	vec_free(&nz_big);
+	vec_free(&t);
 
-	printf("with acc %d, pi ~= 3.", prescision);
-	print_fraction(&c, &z, 16);
+	printf("PI approximation with prescision of %u: PI ~= 3.", prescision);
+	big_print_fraction(&c, &z, 15);
 	printf("\n");
 
-	string_free(&z);
-	string_free(&c);
+	vec_free(&z);
+	vec_free(&c);
 }
 
-void print_fraction(String* c, String* z, uint8_t digits) {
-	while(digits--) {
-		big_mul_one_place(c, 10);
-		uint8_t times = 0;
-		while(big_greater(c, z)) {
-			big_sub(c, z);
-			times++;
-		}
-		printf("%d", times);
-	}
-}
+// === Начало программы ===
 
 int main(int argc, char** argv) {
-	while (1) {
-		int acc;
-		scanf("%i", &acc);
-		print_pi_up_to((uint16_t) acc);
-	}
+	// Строка хранящяя последовательность Фиббоначи
+	Vec fibbonacci_sequence = vec_new(5);
 
-	return 0;
+	// Записываем первые 4 числа Фиббоначи
+	vec_push(&fibbonacci_sequence, "1", 2);
+	fibbonacci_push(&fibbonacci_sequence, 3);
 
-	String a = big_new(129);
-	String b = big_new(13370322);
-	String to = big_new(13370322);
-
-	big_print(&a);
-	big_print(&b);
-
-	big_mul(&to, &a, &b);
-
-	big_print(&to);
-
-	string_free(&to);
-	string_free(&b);
-	string_free(&a);
-
-	return 0;
-
-	String vec = vec_new(5);
-	vec_push(&vec, "1", 2);
-	fibbonacci_push(&vec, 3);
+	unsigned int input;
 
 	while(1) {
-		printf("%s\n", string_get_str(&vec));
+		// Выводим последовательность Фиббоначи
+		printf("Fibbonaci sequence: %s\n", fibbonacci_sequence.ptr);
 
-		int buffer;
-		scanf("%u", &buffer);
-		if (buffer == 0) {
+		// Вставляем N последующих чисел Фиббоначи
+		printf("How many additional Fibbonaci numbers do you want to append? (0 to skip)...\n");
+		scanf("%u", &input);
+		if (input == 0) {
 			break;
 		}
-		fibbonacci_push(&vec, buffer);
+		fibbonacci_push(&fibbonacci_sequence, input);
+	}
+
+	// Освобождаем строку
+	vec_free(&fibbonacci_sequence);
+
+	while(1) {
+		// Выводим приблизительное значение PI, после N итераций
+		printf("How many iterations you want to do to approximate PI? (0 to exit)...\n");
+		scanf("%u", &input);
+		if (input == 0) {
+			break;
+		}
+		print_pi_up_to(input);
 	}
 
 	return 0;
