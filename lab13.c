@@ -342,24 +342,7 @@ void print_pi_up_to2(uint8_t prescision) {
 	printf("with acc %d, pi ~= %1.60lf\n", prescision, pi);
 }
 
-void print_pi_up_to3(uint8_t prescision) {
-	double c = 0;
-	double z = 1;
-	uint32_t prev = 2;
-	int8_t sign = 1;
-	for (uint8_t q = 0; q != prescision; q++) {
-		uint32_t nz = prev++ * prev++ * prev;
-		c = c * nz + sign * 4 * z;
-		z = z * nz;
-		sign *= -1;
-	}
-
-	printf("with acc %d, pi ~= %1.60lf\n", prescision, 3+c/z);
-}
-
 void print_pi_up_to(uint16_t prescision) {
-	printf("with acc %d, pi ~= 3.", prescision);
-
 	String c = big_new(0);
 	String z = big_new(1);
 
@@ -385,15 +368,21 @@ void print_pi_up_to(uint16_t prescision) {
 
 		vec_copy(&z, &c);
 		vec_copy(&c, &t);
-
-		// c = c * nz + sign * 4 * z;
-		// z = z * nz;
-		// sign *= -1;
 	}
 
 	string_free(&nz_big);
+	string_free(&t);
 
-	for(uint8_t i = 0; i != 16; i++) {
+	printf("with acc %d, pi ~= 3.", prescision);
+	print_fraction(&c, &z, 16);
+	printf("\n");
+
+	string_free(&z);
+	string_free(&c);
+}
+
+void print_fraction(String* c, String* z, uint8_t digits) {
+	while(digits--) {
 		big_mul_one_place(&c, 10);
 		uint8_t times = 0;
 		while(big_greater(&c, &z)) {
@@ -402,12 +391,6 @@ void print_pi_up_to(uint16_t prescision) {
 		}
 		printf("%d", times);
 	}
-
-	string_free(&t);
-	string_free(&z);
-	string_free(&c);
-
-	printf("\n");
 }
 
 int main(int argc, char** argv) {
