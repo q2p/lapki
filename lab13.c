@@ -365,8 +365,8 @@ int main(int argc, char** argv) {
 	vec_free(&fibbonacci_sequence);
 
 	while(1) {
-		// Выводим приблизительное значение PI после N итераций
-		printf("How many iterations you want to do to approximate PI? (0 to exit)...\n");
+		// Выводим значение PI с точностью до N-ого знака
+		printf("Up to how many digits do you want to calculate PI? (0 to exit)...\n");
 		scanf("%u", &input);
 		if (input == 0) {
 			break;
