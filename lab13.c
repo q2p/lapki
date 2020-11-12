@@ -66,7 +66,7 @@ void vec_push(Vec* vec, const void* value, size_t len) {
 	vec->len += len;
 }
 
-/// Отбрасывает незначащие байты и уменьшает объём занимаемый массивом
+/// Отбрасывает незначащие байты и уменьшает объём, занимаемый массивом
 void vec_shrink(Vec* vec) {
 	if (vec->ptr) {
 		vec->capacity = vec->len;
@@ -288,6 +288,11 @@ void big_print_fraction(Vec* c, Vec* z, uint8_t digits) {
 ///          100000   3.1415926535897
 ///
 void print_pi_up_to(unsigned int prescision) {
+	uint64_t req_zn = 10;
+	for(unsigned int i = prescision; i != 0; i--) {
+		req_zn *= 10;
+	}
+
 	Vec c = vec_new(1);
 	Vec z = vec_new(1);
 	Vec t = vec_new(1);
@@ -299,8 +304,11 @@ void print_pi_up_to(unsigned int prescision) {
 	big_set(&c, 0);
 	big_set(&z, 1);
 
-	for (unsigned int q = prescision; q != 0; q--) {
+	while(1) {
 		uint64_t nz = ((prev++) >> 1) * prev++ * (prev >> 1);
+		if (nz > req_zn) {
+			break;
+		}
 		big_set(&nz_big, nz);
 
 		big_mul(&t, &c, &nz_big);
@@ -321,7 +329,7 @@ void print_pi_up_to(unsigned int prescision) {
 	vec_free(&t);
 
 	printf("PI approximation with prescision of %u: PI ~= 3.", prescision);
-	big_print_fraction(&c, &z, 15);
+	big_print_fraction(&c, &z, prescision);
 	printf("\n");
 
 	vec_free(&z);
@@ -357,7 +365,7 @@ int main(int argc, char** argv) {
 	vec_free(&fibbonacci_sequence);
 
 	while(1) {
-		// Выводим приблизительное значение PI, после N итераций
+		// Выводим приблизительное значение PI после N итераций
 		printf("How many iterations you want to do to approximate PI? (0 to exit)...\n");
 		scanf("%u", &input);
 		if (input == 0) {
