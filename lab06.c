@@ -53,7 +53,7 @@ unsigned int calculate_days() {
 		year  < 1 || year  > 10000                                  || // Если год   не в пределе [1..10000]
 		month < 1 || month > 12                                     || // Если месяц не в пределе [1..12]
 		day   < 1 || day   > months_table[is_leap_year(year)][month-1] // Если день  не в пределе [1..(Количество дней в данном месяце)]
-		) {
+	) {
 		printf("Date is malformed.\n");
 		return 0; // 0 - введётая дата содержит не допустимые значия
 	}
