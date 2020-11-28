@@ -4,45 +4,45 @@
 
 #define BUFFER_LENGTH (1048576)
 
-typedef struct _LinkedElement LinkedElement;
-struct _LinkedElement {
+typedef struct _StackElement StackElement;
+struct _StackElement {
 	int value;
-	LinkedElement* next;
+	StackElement* next;
 };
 
-void push_stack(LinkedElement** stack, int value) {
-	LinkedElement* new_element = (LinkedElement*) malloc(sizeof(LinkedElement));
+void push_stack(StackElement** stack, int value) {
+	StackElement* new_element = (StackElement*) malloc(sizeof(StackElement));
 	new_element->value = value;
 	new_element->next = *stack;
 	*stack = new_element;
 }
 
-int pop_stack(LinkedElement** stack) {
+int pop_stack(StackElement** stack) {
 	if(*stack == NULL) {
 		return -1;
 	}
-	LinkedElement* current = *stack;
+	StackElement* current = *stack;
 	int ret = (*stack)->value;
 	*stack = (*stack)->next;
 	free(current);
 	return ret;
 }
 
-int pop_stack_N(LinkedElement** stack, size_t amount) {
+int pop_stack_N(StackElement** stack, size_t amount) {
 	int* ret = (int*) malloc(sizeof(int)*amount);
 	for(size_t i = 0; i != amount; i++) {
-		LinkedElement* current = *stack;
+		StackElement* current = *stack;
 		ret[i] = (*stack)->value;
 		*stack = (*stack)->next;
 		free(current);
 	}
 }
 
-char is_stack_empty(LinkedElement* stack) {
+char is_stack_empty(StackElement* stack) {
 	return stack == NULL;
 }
 
-size_t get_stack_length(LinkedElement* stack) {
+size_t get_stack_length(StackElement* stack) {
 	size_t i = 0;
 	while(stack != NULL) {
 		stack = stack->next;
@@ -51,16 +51,17 @@ size_t get_stack_length(LinkedElement* stack) {
 	return i;
 }
 
-void free_stack(LinkedElement* stack) {
+void free_stack(StackElement* stack) {
 	while(stack != NULL) {
-		LinkedElement* current = stack;
+		StackElement* current = stack;
 		stack = stack->next;
 		free(current);
 	}
 }
 
+/// Имплементация, через стек
 char check_expression_stack(char* expr) {
-	LinkedElement* stack = NULL;
+	StackElement* stack = NULL;
 	while(*expr != '\0') {
 		switch (*expr) {
 			case '(':
@@ -84,6 +85,7 @@ char check_expression_stack(char* expr) {
 	}
 }
 
+/// Более эффективная имплементация, чем стек
 char check_expression_fast(char* expr) {
 	size_t c = 0;
 	while(*expr != '\0') {
@@ -105,29 +107,19 @@ char check_expression_fast(char* expr) {
 	return c == 0;
 }
 
+/// Генерирует большое валидное выражение
 void generate_expression(char* expr) {
-	size_t c = 0;
+	size_t half = ((BUFFER_LENGTH-1)/2);
 	size_t i = 0;
-	while(1) {
-		if (i + c < BUFFER_LENGTH - 1) {
-			if ((c == 0) || (rand() & 0x1)) {
-				expr[i] = '(';
-				c++;
-			} else {
-				expr[i] = ')';
-				c--;
-			}
-		} else {
-			if (c == 0) {
-				expr[i] = '\0';
-				break;
-			} else {
-				expr[i] = ')';
-				c--;
-			}
-		}
+	while(i != half) {
+		expr[i] = '(';
 		i++;
 	}
+	while(i != 2*half) {
+		expr[i] = ')';
+		i++;
+	}
+	expr[i] = '\0';
 }
 
 int main(int argc, char** argv) {
