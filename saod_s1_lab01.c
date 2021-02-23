@@ -1,4 +1,4 @@
-// gcc main.c -O3 -march=native && ./a.out
+// gcc main.c -O3 -march=native && ./a.out ./a.out
 
 #pragma GCC optimize ("O3")
 
