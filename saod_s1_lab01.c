@@ -1,10 +1,9 @@
-// gcc main.c -O3 -march=native && ./a.out ./a.out
+// gcc main.c -O3 -march=native -ffast-math -s && ./a.out ./a.out
 
 #pragma GCC optimize ("O3")
 
 #include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <time.h>
 
 #define BUFFER_SIZE_U8  (100)
@@ -78,7 +77,7 @@ int main(int argc, char** argv) {
 	#ifdef CHECKS
 	if (argc != 2) {
 		perror("Too many or too little arguments.");
-		return EXIT_FAILURE;
+		return 1;
 	}
 	#endif
 
@@ -87,7 +86,7 @@ int main(int argc, char** argv) {
 	#ifdef CHECKS
 	if(file == NULL) {
 		perror("Can't open file.");
-		return EXIT_FAILURE;
+		return 1;
 	}
 	#endif
 
@@ -116,5 +115,5 @@ int main(int argc, char** argv) {
 
 	printf("It took %.3f ms.\n", timeelapsed);
 
-	return EXIT_SUCCESS;
+	return 0;
 }
