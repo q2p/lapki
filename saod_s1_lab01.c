@@ -15,8 +15,6 @@
 
 typedef unsigned long long ULL;
 
-FILE* file;
-
 ULL buffer[BUFFER_SIZE_ULL];
 
 size_t count = 0;
@@ -43,7 +41,7 @@ inline void count_ones() {
 #ifdef LUT
 uint8_t ones_lut[0x10000];
 
-void build_lut() {
+inline void build_lut() {
 	ones_lut[0] = 0;
 	for(uint16_t i = 1; i != 0; i++) {
 		uint8_t ones = 0;
