@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
 		trim(next->name);
 	}
 
-	if (strcmp("-z", argv[1]) == 0) {
+	if (strcmp("-id", argv[1]) == 0) {
 		uint32_t uid = atoi(argv[2]);
 		for(size_t i = 0; i != length; i++) {
 			Student* student = ((Student*)list.ptr) + i;
