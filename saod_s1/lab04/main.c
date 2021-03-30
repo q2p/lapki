@@ -57,7 +57,7 @@ uint32_t* get_tail(List* list) {
 }
 
 uint8_t is_empty(List* list) {
-	return list->head != NULL;
+	return list->head == NULL;
 }
 
 List make_list() {
