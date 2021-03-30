@@ -147,6 +147,20 @@ uint32_t* get_at_from_tail(List* list, size_t idx) {
 	}
 }
 
+uint32_t* get_at_from_head(List* list, size_t idx) {
+	ListElement* to_tail = list->tail;
+	while(1) {
+		if(to_tail == NULL) {
+			return NULL;
+		}
+		if(idx == 0) {
+			return &to_tail->value;
+		}
+		to_tail = to_tail->to_tail;
+		idx--;
+	}
+}
+
 uint8_t is_symmetrical(List* list) {
 	ListElement* to_head = list->tail;
 	ListElement* to_tail = list->head;
@@ -183,7 +197,16 @@ int main(int argc, char** argv) {
 			} else {
 				printf("List is empty\n");
 			}
-		} else if(strcmp(input, "get_tail_at") == 0) {
+		} else if(strcmp(input, "get_at_head") == 0) {
+			uint32_t idx;
+			scanf("%d", &idx);
+			uint32_t* value = get_at_from_head(&list, idx);
+			if(value != NULL) {
+				printf("%d\n", *value);
+			} else {
+				printf("Out of bounds\n");
+			}
+		} else if(strcmp(input, "get_at_tail") == 0) {
 			uint32_t idx;
 			scanf("%d", &idx);
 			uint32_t* value = get_at_from_tail(&list, idx);
