@@ -75,62 +75,35 @@ void clear_list(List* list) {
 }
 
 uint8_t pop_head(List* list, uint32_t* container) {
-	if(list->head == NULL) {
+	ListElement* head = list->head;
+	if(head == NULL) {
 		return 0;
 	}
-	ListElement* head = list->head;
 	*container = head->value;
 	list->head = head->to_tail;
 	if(list->head == NULL) {
 		list->tail = NULL;
+	} else {
+		list->head->to_head = NULL;
 	}
 	free(head);
 	return 1;
 }
 
 uint8_t pop_tail(List* list, uint32_t* container) {
-	if(list->tail == NULL) {
+	ListElement* tail = list->tail;
+	if(tail == NULL) {
 		return 0;
 	}
-	ListElement* tail = list->tail;
 	*container = tail->value;
 	list->tail = tail->to_head;
 	if(list->tail == NULL) {
 		list->head = NULL;
+	} else {
+		list->tail->to_tail = NULL;
 	}
 	free(tail);
 	return 1;
-}
-
-void print_list(List* list) {
-	printf("\"");
-	ListElement* to_tail = list->head;
-	while(to_tail != NULL) {
-		printf("%d ", to_tail->value);
-		to_tail = to_tail->to_tail;
-	}
-	printf("\"\n");
-}
-
-void deduplicate(List* list) {
-	ListElement* from = list->head;
-	while(from != NULL) {
-		ListElement* next = from->to_tail;
-		while(next != NULL) {
-			ListElement* next_to_tail = next->to_tail;
-			if(next->value == from->value) {
-				next->to_head->to_tail = next_to_tail;
-				if (next_to_tail == NULL) {
-					list->tail = next->to_head;
-				} else {
-					next_to_tail->to_head = next->to_head;
-				}
-				free(next);
-			}
-			next = next_to_tail;
-		}
-		from = from->to_tail;
-	}
 }
 
 uint32_t* get_at_head(List* list, size_t idx) {
@@ -173,6 +146,37 @@ uint8_t is_symmetrical(List* list) {
 		}
 		to_head = to_head->to_head;
 		to_tail = to_tail->to_tail;
+	}
+}
+
+void print_list(List* list) {
+	printf("\"");
+	ListElement* to_tail = list->head;
+	while(to_tail != NULL) {
+		printf("%d ", to_tail->value);
+		to_tail = to_tail->to_tail;
+	}
+	printf("\"\n");
+}
+
+void deduplicate(List* list) {
+	ListElement* from = list->head;
+	while(from != NULL) {
+		ListElement* next = from->to_tail;
+		while(next != NULL) {
+			ListElement* next_to_tail = next->to_tail;
+			if(next->value == from->value) {
+				next->to_head->to_tail = next_to_tail;
+				if (next_to_tail == NULL) {
+					list->tail = next->to_head;
+				} else {
+					next_to_tail->to_head = next->to_head;
+				}
+				free(next);
+			}
+			next = next_to_tail;
+		}
+		from = from->to_tail;
 	}
 }
 
