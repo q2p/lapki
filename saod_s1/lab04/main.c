@@ -74,7 +74,7 @@ void clear_list(List* list) {
 	list->tail = NULL;
 }
 
-uint8_t pop_from_head(List* list, uint32_t* container) {
+uint8_t pop_head(List* list, uint32_t* container) {
 	if(list->head == NULL) {
 		return 0;
 	}
@@ -88,7 +88,7 @@ uint8_t pop_from_head(List* list, uint32_t* container) {
 	return 1;
 }
 
-uint8_t pop_from_tail(List* list, uint32_t* container) {
+uint8_t pop_tail(List* list, uint32_t* container) {
 	if(list->tail == NULL) {
 		return 0;
 	}
@@ -133,21 +133,7 @@ void deduplicate(List* list) {
 	}
 }
 
-uint32_t* get_at_from_tail(List* list, size_t idx) {
-	ListElement* to_head = list->tail;
-	while(1) {
-		if(to_head == NULL) {
-			return NULL;
-		}
-		if(idx == 0) {
-			return &to_head->value;
-		}
-		to_head = to_head->to_head;
-		idx--;
-	}
-}
-
-uint32_t* get_at_from_head(List* list, size_t idx) {
+uint32_t* get_at_head(List* list, size_t idx) {
 	ListElement* to_tail = list->tail;
 	while(1) {
 		if(to_tail == NULL) {
@@ -157,6 +143,20 @@ uint32_t* get_at_from_head(List* list, size_t idx) {
 			return &to_tail->value;
 		}
 		to_tail = to_tail->to_tail;
+		idx--;
+	}
+}
+
+uint32_t* get_at_tail(List* list, size_t idx) {
+	ListElement* to_head = list->tail;
+	while(1) {
+		if(to_head == NULL) {
+			return NULL;
+		}
+		if(idx == 0) {
+			return &to_head->value;
+		}
+		to_head = to_head->to_head;
 		idx--;
 	}
 }
@@ -185,14 +185,14 @@ int main(int argc, char** argv) {
 		scanf("%s", input);
 		if(strcmp(input, "pop_head") == 0) {
 			uint32_t value;
-			if(pop_from_head(&list, &value)) {
+			if(pop_head(&list, &value)) {
 				printf("%d\n", value);
 			} else {
 				printf("List is empty\n");
 			}
 		} else if(strcmp(input, "pop_tail") == 0) {
 			uint32_t value;
-			if(pop_from_tail(&list, &value)) {
+			if(pop_tail(&list, &value)) {
 				printf("%d\n", value);
 			} else {
 				printf("List is empty\n");
@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
 		} else if(strcmp(input, "get_at_head") == 0) {
 			uint32_t idx;
 			scanf("%d", &idx);
-			uint32_t* value = get_at_from_head(&list, idx);
+			uint32_t* value = get_at_head(&list, idx);
 			if(value != NULL) {
 				printf("%d\n", *value);
 			} else {
@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
 		} else if(strcmp(input, "get_at_tail") == 0) {
 			uint32_t idx;
 			scanf("%d", &idx);
-			uint32_t* value = get_at_from_tail(&list, idx);
+			uint32_t* value = get_at_tail(&list, idx);
 			if(value != NULL) {
 				printf("%d\n", *value);
 			} else {
