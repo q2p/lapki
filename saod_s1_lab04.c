@@ -107,7 +107,7 @@ uint8_t pop_tail(List* list, uint32_t* container) {
 }
 
 uint32_t* get_at_head(List* list, size_t idx) {
-	ListElement* to_tail = list->tail;
+	ListElement* to_tail = list->head;
 	while(1) {
 		if(to_tail == NULL) {
 			return NULL;
