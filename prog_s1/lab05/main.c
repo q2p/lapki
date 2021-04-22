@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
 	scanf("%d", &length);
 
 	if(length > N) {
-		printf("The number is too big.")
+		puts("The number is too big.");
 	}
 
 	// Счёт начинаем с нуля, для упрощения вычислений. Ноль не является простым числом.

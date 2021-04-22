@@ -58,7 +58,6 @@ void print_student(Student* student) {
 
 uint8_t is_whitespace(char c) {
 	switch (c) {
-		case '\0':
 		case '\t':
 		case '\n':
 		case '\v':
@@ -83,8 +82,8 @@ void trim(char *str) {
 		}
 		ns++;
 	}
-	char* end = ns;
-	char* c = ns;
+	char* c = ns + 1;
+	char* end = c;
 	while(*c != '\0') {
 		if(!is_whitespace(*c)) {
 			end = c + 1;
@@ -93,7 +92,7 @@ void trim(char *str) {
 	}
 	size_t nlen = end - ns;
 	memmove(str, ns, nlen);
-	*(str + nlen) = '\0';
+	str[nlen] = '\0';
 }
 
 int main(int argc, char** argv) {
@@ -120,7 +119,7 @@ int main(int argc, char** argv) {
 		trim(next->name);
 	}
 
-	if (strcmp("-id", argv[1]) == 0) {
+	if (strcmp("-z", argv[1]) == 0) {
 		uint32_t uid = atoi(argv[2]);
 		for(size_t i = 0; i != length; i++) {
 			Student* student = ((Student*)list.ptr) + i;
