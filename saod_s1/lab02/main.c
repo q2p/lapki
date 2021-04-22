@@ -29,20 +29,22 @@ void vec_free(Vec* vec) {
 
 void vec_reserve(Vec* vec, size_t additional) {
 	size_t req = vec->len + additional;
-	if (req > vec->capacity) {
-		vec->capacity = req + req / 2;
-		if(vec->ptr) {
-			vec->ptr = realloc(vec->ptr, vec->capacity);
-		} else {
-			vec->ptr = malloc(vec->capacity);
-		}
+	if (req <= vec->capacity) {
+		return;
+	}
+	vec->capacity = req + req / 2;
+	if(vec->ptr) {
+		vec->ptr = realloc(vec->ptr, vec->capacity);
+	} else {
+		vec->ptr = malloc(vec->capacity);
 	}
 }
 
 void* vec_next(Vec* vec, size_t len) {
 	vec_reserve(vec, len);
+	void* ret = (void*)(((uint8_t*) vec->ptr)+vec->len);
 	vec->len += len;
-	return (void*)(((uint8_t*) vec->ptr)+vec->len);
+	return ret;
 }
 
 typedef struct {
