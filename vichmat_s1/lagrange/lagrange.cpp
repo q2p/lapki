@@ -2,7 +2,6 @@
 #include <cstdlib>
 #include <vector>
 #include <iostream>
-#include <iomanip>
 #include <fstream>
 
 class Point {
@@ -18,7 +17,7 @@ double interpolate(std::vector<Point>& points, double x) {
     if (i.is_interpolated) {
       continue;
     }
-    double u = 1.0;
+    double u = i.y;
     double l = 1.0;
     for (auto& j : points) {
       if (!j.is_interpolated && i.x != j.x) {
@@ -26,7 +25,7 @@ double interpolate(std::vector<Point>& points, double x) {
         l *= i.x - j.x;
       }
     }
-    ret += (u / l) * i.y;
+    ret += u / l;
   }
   return ret;
 }
