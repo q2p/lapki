@@ -5,37 +5,16 @@ use std::path::Path;
 use std::sync::{RwLock, Arc};
 use std::time::{Instant, Duration};
 
+use crate::geometry::line_intersection;
+use crate::random_tries::chop_ys;
+use crate::room_state::{Pos, Px};
+
 // Разрешение изображения
 const map_size: usize = 8*64;
 
-// двухмерный вектор (x, y)
-#[derive(Copy, Clone)]
-struct Pos {
-  x: f64,
-  y: f64,
-}
-
-impl Pos {
-  pub fn new(x: f64, y: f64) -> Pos {
-    Pos { x, y }
-  }
-}
-
-#[derive(Copy, Clone)]
-struct Px {
-  x: isize,
-  y: isize,
-}
-
-impl Px {
-  pub fn new(x: isize, y: isize) -> Px {
-    Px { x, y }
-  }
-}
-
 // Находит силу сигнала от точки в определённом пикселе.
 // n_wall - сколько стен между пикселем и точкой.
-fn getDBm(pixel: &Pos, point: &Pos, scale_meters: f64, n_wall: usize) -> f64 {
+pub fn getDBm(pixel: &Pos, point: &Pos, scale_meters: f64, n_wall: usize) -> f64 {
   // Находим где находится точко относительно текущего пикселя
   let a = point.x - pixel.x;
   let b = point.y - pixel.y;
@@ -53,21 +32,6 @@ struct Segment {
   r: u8,
   g: u8,
   b: u8,
-}
-
-// Проверка пересечения двух отрезков. (p0, p1) и (p2, p3).
-// Точка пересечения записывается в intersection
-fn line_intersection(p0: &Pos, p1: &Pos, p2: &Pos, p3: &Pos) -> Option<Pos> {
-  let s1 = Pos::new(p1.x - p0.x, p1.y - p0.y);
-  let s2 = Pos::new(p3.x - p2.x, p3.y - p2.y);
-
-  let s = (-s1.y * (p0.x - p2.x) + s1.x * (p0.y - p2.y)) / (s1.x * s2.y - s2.x * s1.y);
-  let t = ( s2.x * (p0.y - p2.y) - s2.y * (p0.x - p2.x)) / (s1.x * s2.y - s2.x * s1.y);
-
-  if s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0 {
-    return Some(Pos::new(p0.x + (t * s1.x), p0.y + (t * s1.y)));
-  }
-  return None;
 }
 
 struct State {
@@ -130,11 +94,8 @@ pub async fn next_image() {
 
     {
       let mut queued = Vec::with_capacity(concurrency);
-      let mut y_from = 0;
 
-      for i in 0..queued.capacity() {
-        let y_to = map_size * (i+1) / queued.capacity();
-
+      for (y_from, y_to) in chop_ys(map_size, queued.capacity()) {
         let state = state_arc.clone();
 
         queued.push(tauri::async_runtime::spawn(async move {
@@ -149,8 +110,8 @@ pub async fn next_image() {
                 let mut count_wall = 0;
 
                 // Смотрим сколько стен пересекаются с лучём видимости.
-                for (w0, w1) in &state.m_walls {
-                  if line_intersection(&pixel, point, w0, w1).is_some() {
+                for wall in &state.m_walls {
+                  if line_intersection((pixel, *point), *wall).is_some() {
                     count_wall += 1;
                   }
                 }
@@ -204,8 +165,6 @@ pub async fn next_image() {
             }
           }
         }));
-
-        y_from = y_to;
       }
       for queued in queued {
         queued.await.unwrap();

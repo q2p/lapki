@@ -1,13 +1,10 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::fs::OpenOptions;
-use std::io::BufWriter;
-use std::path::Path;
-use std::time::Duration;
-
-mod thread_pool;
+mod random_tries;
 mod heatmap;
+mod room_state;
+mod geometry;
 
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
@@ -16,19 +13,8 @@ fn greet(name: &str) -> String {
 }
 
 fn main() {
+  room_state::load_config();
   tauri::Builder::default()
-    // .manage(DriveEntries(scan_drive().into()))
-    // .manage(ActiveDrive(0.into()))
-    // .manage(ActivePath(Default::default()))
-    // .manage(DirEntries(Default::default()))
-    // .manage(SubDirectoriesCount(Default::default()))
-    .invoke_handler(tauri::generate_handler![
-      greet,
-      // change_drive,
-      // scan_dir,
-      // change_dir,
-      // count_sub_dir,
-    ])
     // .on_page_load(|window, _payload| {
     //   let payload = BootPayload { drives: scan_drive() };
     //   window
@@ -39,7 +25,7 @@ fn main() {
       tauri::async_runtime::spawn(async move { heatmap::next_image().await });
       Ok(())
     })
+    .invoke_handler(tauri::generate_handler![room_state::get_config])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
-  println!("finished");
 }

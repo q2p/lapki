@@ -37,9 +37,7 @@
       {
         "fullscreen": false,
         "resizable": true,
-        "title": "tauri_paper",
-        "width": 800,
-        "height": 600
+        "title": "tauri_paper"
       }
     ]
   }
