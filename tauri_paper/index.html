@@ -6,20 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tauri App</title>
     <script type="module" src="/src/main.ts" defer></script>
-    <style>
-      .logo.vite:hover {
-        filter: drop-shadow(0 0 2em #747bff);
-      }
-
-      .logo.typescript:hover {
-        filter: drop-shadow(0 0 2em #2d79c7);
-      }
-    </style>
   </head>
 
   <body>
-    <canvas id="canvas" width="800" height="800" style="border: 1px solid black;">
-      Update your browser!
-    </canvas>
+    <!-- <div style="display: flex;">
+      <canvas id="canvas" width="800" height="800" style="border: 1px solid black;">
+        Update your browser!
+      </canvas>
+      <div style="margin-left: 5px; border: 1px solid black;"> Object inspector </div>
+    </div> -->
+    <div style="display: flex; width: 100%;">
+      <div id="container"></div>
+      <div style="margin-left: 5px; border: 1px solid black;"> Object inspector </div>
+    </div>
   </body>
 </html>

@@ -71,6 +71,10 @@ button {
   cursor: pointer;
 }
 
+canvas {
+  border: 1px solid black;
+}
+
 button:hover {
   border-color: #396cd8;
 }

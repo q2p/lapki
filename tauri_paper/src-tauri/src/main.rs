@@ -24,13 +24,13 @@ struct Config {
 struct Wall {
   a: Point2d,
   b: Point2d,
-  damping: i32,
+  damping: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RadioPoint {
   pos: Point2d,
-  power: i32,
+  power: Option<f64>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -40,8 +40,8 @@ struct RadioZone {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Point2d {
-  x: i32,
-  y: i32,
+  x: f64,
+  y: f64,
 }
 
 fn read_config<P: AsRef<Path>>(path: P) -> Config {
