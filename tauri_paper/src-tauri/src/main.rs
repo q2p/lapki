@@ -9,7 +9,7 @@ use std::io::{BufReader, BufWriter, Write};
 // Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+  format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -65,6 +65,7 @@ fn get_config() -> Config {
 }
 
 fn main() {
+
   // for a in std::fs::read_dir(".").unwrap() {
   //   println!("{}", a.unwrap().path().to_str().unwrap())
   // }
