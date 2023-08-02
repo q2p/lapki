@@ -6,8 +6,8 @@ use std::sync::{RwLock, Arc};
 use std::time::{Instant, Duration};
 
 use crate::geometry::line_intersection;
-use crate::random_tries::chop_ys;
-use crate::room_state::{Pos, Px};
+use crate::random_tries::{chop_ys, RoomState2};
+use crate::room_state::{Pos, Px, RoomState};
 
 // Разрешение изображения
 const map_size: usize = 8*64;
@@ -35,52 +35,18 @@ struct Segment {
 }
 
 struct State {
-  m_walls: Vec<(Pos, Pos)>,
-  points: Vec<Pos>,
   scene: Box<[u8]>,
 }
 
 // Вызывается по таймеру и перерисовывает картинку
-pub async fn next_image() {
+pub async fn next_image(regular_state: RoomState, next_guess: &RoomState2) {
   let start = Instant::now();
   let path = Path::new("../rimg.png");
-  let concurrency = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
+  let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
-  let state_arc = Arc::new(RwLock::new(State {
-    m_walls: Vec::new(),
-    points: Vec::new(),
-    scene: vec![0u8; map_size*map_size*3].into_boxed_slice(),
-  }));
+  let state_arc = Arc::new(RwLock::new(vec![0u8; map_size*map_size*3].into_boxed_slice()));
 
   loop {
-    // Текущее время (нужно для анимации)
-    let now = Instant::now().saturating_duration_since(start).as_secs_f64() / 20f64;
-
-    // Расставляем точки доступа и стены
-    {
-      let mut state = state_arc.write().unwrap();
-      state.m_walls.clear();
-      state.points.clear();
-
-      // Некоторые стены фиксированны
-      state.m_walls.push((Pos::new(0.46, 0.46), Pos::new(0.54, 0.46) ));
-      state.m_walls.push((Pos::new(0.70, 0.60), Pos::new(0.70, 0.35) ));
-      state.m_walls.push((Pos::new(0.60, 0.65), Pos::new(0.40, 0.50) ));
-      state.m_walls.push((Pos::new(0.46, 0.48), Pos::new(0.54, 0.48) ));
-      // Некоторые крутятся по кругу
-      let time0 = 6.66 * std::f64::consts::PI * (now - 0.1);
-      let time1 = 6.66 * std::f64::consts::PI * (now + 0.1);
-      state.m_walls.push((
-        Pos::new(0.5+0.25*time0.sin(), 0.5+0.25*time0.cos()),
-        Pos::new(0.5+0.25*time1.sin(), 0.5+0.25*time1.cos())
-      ));
-
-      // Расставляем точки доступа (тоже крутятся)
-      let time = 8.0 * std::f64::consts::PI * now;
-      state.points.push(Pos::new(0.5+0.02*time.sin(), 0.5+0.02*time.cos()));
-      // points.emplace_back(Vec(0.5+0.25*qSin(2*M_PI*time), 0.5+0.25*qCos(2*M_PI*time)));
-    }
-
     // Задаём область силы сигнала которую сможем отобразить
     // Если сигнал выходит за рамки [0.20, 0.31], то он обрезается.
     const dbmin: f64 = 0.20;
@@ -93,9 +59,9 @@ pub async fn next_image() {
     // Перебираем все пиксели на холсте
 
     {
-      let mut queued = Vec::with_capacity(concurrency);
+      let mut queued = Vec::with_capacity(threads);
 
-      for (y_from, y_to) in chop_ys(map_size, queued.capacity()) {
+      for (y_from, y_to, slices) in chop_ys(map_size, threads) {
         let state = state_arc.clone();
 
         queued.push(tauri::async_runtime::spawn(async move {
@@ -104,26 +70,25 @@ pub async fn next_image() {
           for y in y_from..y_to {
             for x in 0..map_size {
               let pixel = Pos::new(x as f64 / map_size as f64 , y as f64 / map_size as f64);
-              let mut dBm = 1000f64;
               // Рассматриваем каждую точку доступа
-              for point in &state.points {
+              for point in &regular_state.radio_points {
                 let mut count_wall = 0;
 
                 // Смотрим сколько стен пересекаются с лучём видимости.
-                for wall in &state.m_walls {
-                  if line_intersection((pixel, *point), *wall).is_some() {
+                for wall in regular_state.walls {
+                  if line_intersection((pixel, point.pos), (wall.a, wall.b)).is_some() {
                     count_wall += 1;
                   }
                 }
                 // Считаем силу сигнала и запоминаем самый сильный
-                let dBc = getDBm(&pixel, point, 1.0, count_wall) / 1000.0;
+                let dBc = getDBm(&pixel, point.pos, 1.0, count_wall) / 1000.0;
                 if dBc < dBm  {
                   dBm = dBc;
                 }
               }
 
               // Обрезаем верхний и нижние участки выходящие за допустимые границы
-              let mut s = ((dBm - dbmin) / (dbmax-dbmin))
+              let mut s = ((dBm - dbmin) / (dbmax - dbmin))
                 .clamp(0.0, 1.0)
                 // Изменяем кривизну интенсивностей сигнала
                 .powf(dbpow);
@@ -157,7 +122,7 @@ pub async fn next_image() {
               }
               // Закрашеваем пиксель
               unsafe {
-                let offset = state.scene.as_ptr().add((y * map_size + x) * 3) as *mut u8;
+                let offset = state.as_ptr().add((y * map_size + x) * 3) as *mut u8;
                 core::ptr::write(offset.add(0), r);
                 core::ptr::write(offset.add(1), g);
                 core::ptr::write(offset.add(2), b);

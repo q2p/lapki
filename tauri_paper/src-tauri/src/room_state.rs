@@ -30,6 +30,7 @@ pub struct Wall {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioPoint {
+  pub id: usize,
   pub pos: Pos,
   pub power: f64,
   pub power_min: f64,
@@ -38,6 +39,7 @@ pub struct RadioPoint {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioZone {
+  pub desired_point_id: usize,
   pub points: Vec<Pos>
 }
 

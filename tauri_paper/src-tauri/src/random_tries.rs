@@ -1,17 +1,14 @@
-use std::collections::VecDeque;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
+use std::time::Duration;
 
-use rand::{Rng};
+use rand::Rng;
 
 use crate::geometry::line_intersection;
+use crate::heatmap;
 use crate::room_state::{RoomState, Pos};
 
-trait Solver {
-
-}
-
-struct RoomState2 {
+pub struct RoomState2 {
   pub points_signal: Vec<f64>,
 }
 
@@ -19,88 +16,123 @@ struct ParamRanges {
   pub points_limits: Vec<(f64, f64)>,
 }
 
-struct MonteCarloSolver {
+fn get_path_loss(distance: f64, wall_dampening: f64) -> f64 {
+  // TODO:
+  return todo!() + wall_dampening;
 }
 
-struct StateToSolve {
-  y_from: usize,
-  y_to: usize,
-  new_state: Arc<RoomState2>,
-  regular: Arc<RoomState>,
+fn is_inside() {
+  // TODO: https://gis.stackexchange.com/questions/147629/testing-if-a-geodesic-polygon-contains-a-point-c
+  return todo!()
 }
 
-fn solve_slice(state: StateToSolve) {
-  for y in state.y_from..state.y_to {
+fn solve_slice(y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
+  let mut signal = 0f64;
+  let mut noise = 0f64;
+  for y in y_from..y_to {
     for x in 0..state.map_size {
-      let pixel = Pos::new(x as f64 / state.map_size as f64 , y as f64 / state.map_size as f64);
-      let mut dBm = 1000f64;
-      // Рассматриваем каждую точку доступа
-      for point in &state.regular.radio_points {
-        let mut damped = 0f64;
+      let pixel_position = Pos::new(x as f64 / state.map_size as f64, y as f64 / state.map_size as f64);
 
+      let desired_point = regular_state.radio_zones
+        .iter()
+        .find(|zone| is_inside(pixel_position, zone))
+        .map(|v| v.desired_point_id);
+
+      let desired_point = match desired_point {
+        Some(v) => v,
+        None => continue,
+      };
+
+      // Рассматриваем каждую точку доступа
+      for (point_regular, point_power) in regular_state.radio_points.iter().zip(this_guess.points_signal) {
+        let distance = {
+          let dx = pixel_position.x - point_regular.pos.x;
+          let dy = pixel_position.y - point_regular.pos.y;
+          (dx*dx + dy*dy).sqrt()
+        };
+
+        let mut wall_dampening = 0f64;
         // Смотрим сколько стен пересекаются с лучём видимости.
-        for wall in &state.regular.walls {
-          if line_intersection((pixel, *point), *wall).is_some() {
-            damped += wall.damping;
+        for wall in &regular_state.walls {
+          if line_intersection((pixel_position, point_regular.pos), (wall.a, wall.b)).is_some() {
+            wall_dampening += wall.damping;
           }
         }
         // Считаем силу сигнала и запоминаем самый сильный
-        let dBc = getDBm(&pixel, point, 1.0, count_wall) / 1000.0;
-        if dBc < dBm  {
-          dBm = dBc;
+        let final_signal_power = point_power - get_path_loss(distance, wall_dampening);
+
+        if point_regular.id == desired_point {
+          signal += final_signal_power;
+        } else {
+          noise += final_signal_power;
         }
       }
     }
   }
+  return (signal, noise);
 }
 
-impl MonteCarloSolver {
-  pub async fn try_montecarlo() {
-    let state = Arc::new(crate::room_state::get_config());
+pub async fn do_montecarlo() {
+  let state = Arc::new(crate::room_state::get_config());
 
-    let limits = ParamRanges {
-      points_limits: state.radio_points.iter().map(|p| (p.power_min, p.power_max)).collect(),
-    };
+  let limits = ParamRanges {
+    points_limits: state.radio_points.iter().map(|p| (p.power_min, p.power_max)).collect(),
+  };
 
-    let mut best_match = None;
+  let mut rng = rand::thread_rng();
 
-    let mut rng = rand::thread_rng();
+  let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
-    let mut backlog = VecDeque::new();
+  let (best_tx, best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
 
-    let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
-
-    let (tx, rx) = tokio::sync::mpsc::channel::<StateToSolve>(4*threads);
-
-    tokio::spawn(async move {
-      while let Some(new_state) = rx.recv().await {
-        solve_slice(new_state);
+  tokio::spawn(async move {
+    while let Ok(()) = best_rx.changed().await {
+      let new_state = best_rx.borrow();
+      if let Some(new_state) = *new_state {
+        heatmap::next_image(&new_state);
+        tokio::time::sleep(Duration::from_secs(2)).await;
       }
+    }
+  });
+
+  let max_sinr = f64::NEG_INFINITY;
+
+  loop {
+    let next_guess = Arc::new(RoomState2 {
+      points_signal: limits.points_limits.iter().map(|(min, max)| rng.gen_range(*min..=*max)).collect(),
     });
 
-    loop {
-      let next_guess = Arc::new(RoomState2 {
-        points_signal: limits.points_limits.iter().map(|(min, max)| rng.gen_range(*min..=*max)).collect(),
-      });
-
-      for (y_from, y_to) in chop_ys(map_size, threads) {
-        tx.send(StateToSolve {
-          y_from,
-          y_to,
-          new_state: next_guess.clone(),
-          regular: state.clone(),
-        }).await;
-      }
+    // TODO: map size должен включать все стены.
+    let mut left_to_solve = Vec::new();
+    for (y_from, y_to, slices) in chop_ys(map_size, threads.max(32)) {
+      let next_guess = next_guess.clone();
+      let state = state.clone();
+      left_to_solve.push(tokio::spawn(async move {
+        solve_slice(y_from, y_to, &*next_guess, &*state)
+      }));
+    }
+    let mut signal = 0f64;
+    let mut noise = 0f64;
+    for i in left_to_solve {
+      let (s, n) = i.await.unwrap();
+      signal += s;
+      noise += n;
+    }
+    let sinr = signal / (signal + noise);
+    if sinr > max_sinr {
+      max_sinr = sinr;
+      best_tx.send(Some(next_guess)).unwrap();
     }
   }
 }
 
-pub fn chop_ys(y_max: usize, mut slices: usize) -> impl Iterator<Item = (usize, usize)> {
+pub fn chop_ys(y_max: usize, mut slices: usize) -> impl Iterator<Item = (usize, usize, usize)> {
   slices = slices.min(y_max);
   (0..slices)
     .map(move |i| (
       y_max *  i    / slices,
-      y_max * (i+1) / slices
+      y_max * (i+1) / slices,
+      slices
     )
   )
 }
