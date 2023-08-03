@@ -34,7 +34,6 @@ async function get_config(): Promise<Config>{
 
 let config: Config = await get_config();
 
-
 const stage = new Konva.Stage({
   container: 'container',
   width: 1000,
@@ -140,3 +139,4 @@ stage.on('dragend', () => {
   checkShapes();
   layer.draw();
 })
+
