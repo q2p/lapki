@@ -37,8 +37,8 @@ let config: Config = await get_config();
 
 const stage = new Konva.Stage({
   container: 'container',
-  width: window.innerWidth,
-  height: window.innerHeight,
+  width: 1000,
+  height: 1000,
   draggable: true
 });
 
@@ -81,15 +81,19 @@ function checkShapes() {
         fill: grid[indexX][indexY],
         stroke: 'gray',
         strokeWidth: 1
-      }))
+      }));
 
-      layer.add(new Konva.Line({
+      let line = new Konva.Line({
         x: 0,
         y: 0,
         points: [10, 10, 10, 0],
         stroke: 'black',
         tension: 1
-      }))
+      });
+      line.on("click", () => {
+        console.log("click");
+      });
+      layer.add(line);
     }
   }
 
