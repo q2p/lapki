@@ -41,6 +41,7 @@ struct State {
 pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
   next_image1(bb.clone(), regular_state.clone(), next_guess.clone()).await;
   next_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
+  next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
 }
 
 fn length(a: Pos, b: Pos) -> f64 {
@@ -54,7 +55,7 @@ fn length_sq(a: Pos, b: Pos) -> f64 {
 }
 
 fn dot(a: Pos, b: Pos) -> f64 {
-  a.x*b.x + a.y+b.y
+  a.x*b.x + a.y*b.y
 }
 
 pub fn bounding_box(pos: impl Iterator<Item = impl Deref<Target = Pos>>) -> (Pos, Pos) {
@@ -85,10 +86,10 @@ pub fn is_inside(point: Pos, zone: &RadioZone) -> bool {
       *zone.points.get_unchecked(j)
     )};
 
-    inside ^= (a.y > point.y) != (b.y > point.y) && point.x < a.x + (b.x - a.x) * (point.y - a.y) / (b.y - a.y);
+    inside ^= (point.y < a.y) != (point.y < b.y) && (point.x - a.x) < (point.y - a.y) * (b.x-a.x) / (b.y-a.y);
 
     i += 1;
-    j = i + 1;
+    j = i - 1;
   }
   return inside;
 }
@@ -102,24 +103,22 @@ fn distance_to_zone(pix: Pos, zone: &RadioZone) -> f64 {
   let mut i = 0;
   let mut j = zone.points.len() - 1;
   while i != zone.points.len() {
-    let (a, b) = unsafe {(
+    let (v, w) = unsafe {(
       *zone.points.get_unchecked(i),
       *zone.points.get_unchecked(j)
     )};
 
-    let dw = a - b;
-    let len_sq = dw.x*dw.x+dw.y+dw.y;
-    if len_sq > 0.00001 {
-      let t = (dot(a - b, dw) / len_sq).clamp(0.0, 1.0);
-      let projection = a + dw * t;
-      let len = length(pix, projection);
-      if len < min_len {
-        min_len = len;
-      }
+    let d = w - v;
+    let len_sq = d.x*d.x + d.y*d.y;
+    let t = (dot(pix - v, w - v) / len_sq).clamp(0.0, 1.0);
+    let projection = v + d * t;
+    let len = length(pix, projection);
+    if len < min_len {
+      min_len = len;
     }
 
     i += 1;
-    j = i + 1;
+    j = i - 1;
   }
   return min_len;
 }
@@ -194,10 +193,10 @@ const dbmax: f64 = 0.368;
 // более равномерно
 const dbpow: f64 = 4.0;
 fn scale_dbs(dBm: f64) -> f64 {
-  ((dBm - dbmin) / (dbmax - dbmin))
-    .clamp(0.0, 1.0)
-    // Изменяем кривизну интенсивностей сигнала
-    .powf(dbpow)
+  scale_dbs2(dBm, dbmin, dbmax, dbpow)
+}
+fn scale_dbs2(v: f64, min: f64, max: f64, pow: f64) -> f64 {
+  ((v - min) / (max - min)).clamp(0.0, 1.0).powf(pow)
 }
 
 // Вызывается по таймеру и перерисовывает картинку
@@ -212,7 +211,34 @@ pub async fn next_image2(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, 
     let mut B = [0.0, 0.0, 0.0];
     for zone in regular_state.radio_zones.iter() {
       let zone_rgb = [zone.r, zone.g, zone.b];
-      let d = distance_to_zone(pix, zone).powf(P);
+      let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
+      for i in 0..3 {
+        let color = zone_rgb[i] as f64;
+        A[i] += color / d;
+        B[i] += 1.0 / d;
+      }
+    }
+    return (
+      (A[0] / B[0]).clamp(0.0, 255.0) as u8,
+      (A[1] / B[1]).clamp(0.0, 255.0) as u8,
+      (A[2] / B[2]).clamp(0.0, 255.0) as u8,
+    )
+  })).await;
+}
+
+// Вызывается по таймеру и перерисовывает картинку
+pub async fn next_image3(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
+  do_image(bb, regular_state.clone(), "../rimg3.png", Arc::new(move |pix| {
+    // Рассматриваем каждую точку доступа
+    let dbms: Vec<f64> = regular_state.radio_points.iter().map(|point| dbm_after_walls(&regular_state, pix, point)).collect();
+
+    const P: f64 = 2.0;
+
+    let mut A = [0.0, 0.0, 0.0];
+    let mut B = [0.0, 0.0, 0.0];
+    for zone in regular_state.radio_zones.iter() {
+      let zone_rgb = [zone.r, zone.g, zone.b];
+      let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
       let signal = dbms[zone.desired_point_id];
       let all_signals = dbms.iter().sum::<f64>() + STATIC_NOISE;
       let noise = all_signals - signal;
@@ -220,12 +246,12 @@ pub async fn next_image2(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, 
       let noise_to_all = noise / all_signals;
       let sinr = signal / noise;
 
-      let sinr_01 = scale_dbs(sinr);
+      let sinr_01 = sinr;
+      let sinr_01 = scale_dbs2(sinr_01, 0.1125, 0.1377, 2.5);
 
       for i in 0..3 {
         // let color = 255.0 * noise_to_all + zone_rgb[i] as f64 * sig_to_all;
-        // let color = 255.0 * sinr_01 + zone_rgb[i] as f64 * sinr_01;
-        let color = zone_rgb[i] as f64;
+        let color = 255.0 * sinr_01 + zone_rgb[i] as f64 * (1.0 - sinr_01);
         A[i] += color / d;
         B[i] += 1.0 / d;
       }
