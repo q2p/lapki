@@ -8,6 +8,36 @@ pub struct Pos {
   pub y: f64,
 }
 
+impl core::ops::Sub for Pos {
+  type Output = Pos;
+  fn sub(self, rhs: Pos) -> Pos {
+    Pos {
+      x: self.x - rhs.x,
+      y: self.y - rhs.y,
+    }
+  }
+}
+
+impl core::ops::Add for Pos {
+  type Output = Pos;
+  fn add(self, rhs: Pos) -> Pos {
+    Pos {
+      x: self.x + rhs.x,
+      y: self.y + rhs.y,
+    }
+  }
+}
+
+impl core::ops::Mul<f64> for Pos {
+  type Output = Pos;
+  fn mul(self, rhs: f64) -> Pos {
+    Pos {
+      x: self.x * rhs,
+      y: self.y * rhs,
+    }
+  }
+}
+
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Px {
   pub x: isize,
@@ -40,7 +70,12 @@ pub struct RadioPoint {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioZone {
   pub desired_point_id: usize,
-  pub points: Vec<Pos>
+  /// По часовой стрелке.
+  pub points: Vec<Pos>,
+
+  pub r: u8,
+  pub g: u8,
+  pub b: u8
 }
 
 impl Pos {
