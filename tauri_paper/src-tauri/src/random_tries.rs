@@ -1,71 +1,64 @@
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
 use crate::geometry::line_intersection;
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter};
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
-  pub points_signal: Vec<f64>,
+  /// dBm
+  pub points_signal_dbm: Vec<f64>,
 }
 
 struct ParamRanges {
-  pub points_limits: Vec<(f64, f64)>,
+  /// dBm max
+  pub points_limits_dbm: Vec<f64>,
 }
 
-fn get_path_loss(distance: f64, wall_dampening: f64) -> f64 {
-  // TODO:
-  return wall_dampening + 0.0;
-}
-
-fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
-  let mut signal = 0f64;
-  let mut noise = 0f64;
+fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64, f64) {
+  let mut signal_t = 0f64;
+  let mut noise_t = 0f64;
+  let mut min_sinr = f64::MAX;
   for y in y_from..y_to {
     for x in 0..bb.res.0 {
-      let pixel_position = pix_to_meter(&bb, Px::new(x as isize, y as isize));
+      let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
-      let desired_point = regular_state.radio_zones
+      let desired_point_id = regular_state.radio_zones
         .iter()
-        .find(|zone| is_inside(pixel_position, zone))
+        .find(|zone| is_inside(pix, zone))
         .map(|v| v.desired_point_id);
 
-      let desired_point = match desired_point {
+      let desired_point_id = match desired_point_id {
         Some(v) => v,
         None => continue,
       };
 
       // Рассматриваем каждую точку доступа
-      for (point_regular, point_power) in regular_state.radio_points.iter().zip(this_guess.points_signal.iter()) {
-        let distance = {
-          let dx = pixel_position.x - point_regular.pos.x;
-          let dy = pixel_position.y - point_regular.pos.y;
-          (dx*dx + dy*dy).sqrt()
-        };
+      let mwts: Vec<f64> = regular_state.radio_points
+        .iter()
+        .zip(this_guess.points_signal_dbm.iter())
+        .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
+        .collect();
 
-        let mut wall_dampening = 0f64;
-        // Смотрим сколько стен пересекаются с лучём видимости.
-        for wall in &regular_state.walls {
-          if line_intersection((pixel_position, point_regular.pos), (wall.a, wall.b)).is_some() {
-            wall_dampening += wall.damping;
-          }
-        }
-        // Считаем силу сигнала и запоминаем самый сильный
-        let final_signal_power = point_power - get_path_loss(distance, wall_dampening);
+      let signal_mw = mwts[desired_point_id];
+      let all_signals_mw = mwts.iter().sum::<f64>();
+      let interference_mw = all_signals_mw - signal_mw;
+      let ni_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
+      let sinr = mw_to_dbm(signal_mw / ni_mw);
 
-        if point_regular.id == desired_point {
-          signal += final_signal_power;
-        } else {
-          noise += final_signal_power;
-        }
+      if sinr < min_sinr {
+        min_sinr = sinr;
       }
+
+      signal_t += signal_mw;
+      noise_t += ni_mw;
     }
   }
-  return (signal, noise);
+  return (signal_t, noise_t, min_sinr);
 }
 
 #[derive(Debug)]
@@ -100,7 +93,7 @@ pub async fn do_montecarlo() {
   let state = Arc::new(crate::room_state::get_config());
 
   let limits = ParamRanges {
-    points_limits: state.radio_points.iter().map(|p| (p.power_min, p.power_max)).collect(),
+    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
   };
 
   let mut rng = rand::rngs::StdRng::from_entropy();
@@ -111,9 +104,11 @@ pub async fn do_montecarlo() {
 
   let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
   let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
+  // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
+  // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
 
-  println!("m{:?}", measure);
-  println!("r{:?}\n\n", render);
+  println!("measure {:?}", measure);
+  println!("render {:?}\n\n", render);
 
   {
     let state = state.clone();
@@ -133,14 +128,30 @@ pub async fn do_montecarlo() {
 
   let mut max_sinr = f64::NEG_INFINITY;
 
-  loop {
+  let mut iterations = 0;
+  let mut next_check = 0;
+  let mut last_print = Instant::now();
+
+  let mut super_uper_min = f64::NEG_INFINITY;
+
+  'monte_carlo: loop {
+    if iterations > next_check {
+      next_check += 100;
+      let now = Instant::now();
+      if now.duration_since(last_print).as_secs() > 0 {
+        last_print = last_print + Duration::from_secs(1);
+        println!("Iterations: {iterations}");
+      }
+    }
+    iterations += 1;
     let next_guess = Arc::new(RoomState2 {
-      points_signal: limits.points_limits.iter().map(|(min, max)| rng.gen_range(*min..=*max)).collect(),
+      points_signal_dbm: limits.points_limits_dbm.iter().map(|max| rng.gen_range(0.0..=*max)).collect(),
+      // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| 200f64).collect(),
     });
 
     // TODO: map size должен включать все стены.
     let mut left_to_solve = Vec::new();
-    for (y_from, y_to, slices) in chop_ys(measure.res.1, threads.max(32)) {
+    for (y_from, y_to, _) in chop_ys(measure.res.1, 1) {
       let next_guess = next_guess.clone();
       let state = state.clone();
       let measure = measure.clone();
@@ -148,16 +159,24 @@ pub async fn do_montecarlo() {
         solve_slice(&*measure, y_from, y_to, &*next_guess, &*state)
       }));
     }
-    let mut signal = 0f64;
-    let mut noise = 0f64;
+    let mut signal_mw = 0f64;
+    let mut noise_mw = 0f64;
     for i in left_to_solve {
-      let (s, n) = i.await.unwrap();
-      signal += s;
-      noise += n;
+      let (s, n, min_sinr_dbm) = i.await.unwrap();
+      signal_mw += s;
+      noise_mw += n;
+      if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
+        super_uper_min = min_sinr_dbm;
+        println!("min_sinr: {min_sinr_dbm}dbm");
+      }
+      if min_sinr_dbm < -5.0 {
+        continue 'monte_carlo;
+      }
     }
-    let sinr = signal / (signal + noise);
-    if sinr > max_sinr {
-      max_sinr = sinr;
+    let sinr_avg = signal_mw / noise_mw;
+    if sinr_avg > max_sinr {
+      max_sinr = sinr_avg;
+      println!("min_sinr_sum: {}mw", sinr_avg);
       best_tx.send(Some(next_guess)).unwrap();
     }
   }

@@ -63,8 +63,7 @@ pub struct RadioPoint {
   pub id: usize,
   pub pos: Pos,
   pub power: f64,
-  pub power_min: f64,
-  pub power_max: f64,
+  pub power_max_mw: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -106,7 +105,25 @@ pub fn write_config(config: RoomState) {
 
 pub fn load_config() {
   let file = std::fs::read_to_string("map.json").unwrap();
-  *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
+  let mut json: RoomState = serde_json::from_str(&file).unwrap();
+  let meter_scale = 12.0;
+  for p in json.radio_points.iter_mut() {
+    p.pos.x *= meter_scale;
+    p.pos.y *= meter_scale;
+  }
+  for z in json.radio_zones.iter_mut() {
+    for p in z.points.iter_mut() {
+      p.x *= meter_scale;
+      p.y *= meter_scale;
+    }
+  }
+  for w in json.walls.iter_mut() {
+    w.a.x *= meter_scale;
+    w.a.y *= meter_scale;
+    w.b.x *= meter_scale;
+    w.b.y *= meter_scale;
+  }
+  *STATE.lock().unwrap() = json;
 }
 
 #[tauri::command]
