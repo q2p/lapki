@@ -1,139 +1,183 @@
 use std::num::NonZeroUsize;
+use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 
 use crate::geometry::line_intersection;
-use crate::heatmap;
-use crate::room_state::{RoomState, Pos, RadioZone};
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
+use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
-  pub points_signal: Vec<f64>,
+  /// dBm
+  pub points_signal_dbm: Vec<f64>,
 }
 
 struct ParamRanges {
-  pub points_limits: Vec<(f64, f64)>,
+  /// dBm max
+  pub points_limits_dbm: Vec<f64>,
 }
 
-fn get_path_loss(distance: f64, wall_dampening: f64) -> f64 {
-  // TODO:
-  return todo!() + wall_dampening;
-}
+fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64, f64) {
+  let mut signal_t = 0f64;
+  let mut noise_t = 0f64;
+  let mut min_sinr = f64::MAX;
 
-fn is_inside(pixel_position: Pos, zone: RadioZone) -> bool {
-  // TODO: https://gis.stackexchange.com/questions/147629/testing-if-a-geodesic-polygon-contains-a-point-c
-  let n = zone.points.len();
-  let mut res = false;
-  for i in 0..n {
-    let j = (i + 1) % n;
-    if (
-      ( (zone.points[j].y <= pixel_position.y && pixel_position.y < zone.points[i].y) ||
-        (zone.points[i].y <= pixel_position.y && pixel_position.y < zone.points[j].y) ) &&
-      ( pixel_position.x < zone.points[j].x + (zone.points[i].x - zone.points[j].x) * (pixel_position.y - zone.points[j].y) /
-        (zone.points[i].y - zone.points[j].y))
-    ) {
-      res != res;
-    }
-  }
-  return res; 
-}
-
-fn solve_slice(y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
-  let mut signal = 0f64;
-  let mut noise = 0f64;
   for y in y_from..y_to {
-    for x in 0..state.map_size {
-      let pixel_position = Pos::new(x as f64 / state.map_size as f64, y as f64 / state.map_size as f64);
+    for x in 0..bb.res.0 {
+      let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
-      let desired_point = regular_state.radio_zones
+      let desired_point_id = regular_state.radio_zones
         .iter()
-        .find(|zone| is_inside(pixel_position, zone))
+        .find(|zone| is_inside(pix, zone))
         .map(|v| v.desired_point_id);
 
-      let desired_point = match desired_point {
+      let desired_point_id = match desired_point_id {
         Some(v) => v,
         None => continue,
       };
 
       // Рассматриваем каждую точку доступа
-      for (point_regular, point_power) in regular_state.radio_points.iter().zip(this_guess.points_signal) {
-        let distance = {
-          let dx = pixel_position.x - point_regular.pos.x;
-          let dy = pixel_position.y - point_regular.pos.y;
-          (dx*dx + dy*dy).sqrt()
-        };
+      let mwts: Vec<f64> = regular_state.radio_points
+        .iter()
+        .zip(this_guess.points_signal_dbm.iter())
+        .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
+        .collect();
 
-        let mut wall_dampening = 0f64;
-        // Смотрим сколько стен пересекаются с лучём видимости.
-        for wall in &regular_state.walls {
-          if line_intersection((pixel_position, point_regular.pos), (wall.a, wall.b)).is_some() {
-            wall_dampening += wall.damping;
-          }
-        }
-        // Считаем силу сигнала и запоминаем самый сильный
-        let final_signal_power = point_power - get_path_loss(distance, wall_dampening);
+      let signal_mw = mwts[desired_point_id];
+      let all_signals_mw = mwts.iter().sum::<f64>();
+      let interference_mw = all_signals_mw - signal_mw;
+      let ni_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
+      let sinr = mw_to_dbm(signal_mw / ni_mw);
 
-        if point_regular.id == desired_point {
-          signal += final_signal_power;
-        } else {
-          noise += final_signal_power;
-        }
+      if sinr < min_sinr {
+        min_sinr = sinr;
       }
+
+      signal_t += signal_mw;
+      noise_t += ni_mw;
     }
   }
-  return (signal, noise);
+  return (signal_t, noise_t, min_sinr);
+}
+
+#[derive(Debug)]
+pub struct BoundingBoxes {
+  pub min: Pos,
+  pub max: Pos,
+  pub wh: Pos,
+  pub res: (usize, usize),
+}
+
+impl BoundingBoxes {
+  pub fn new(points: impl Iterator<Item = impl Deref<Target = Pos>>, padding: f64, pixels: u32) -> BoundingBoxes {
+    let (mut min, mut max) = bounding_box(points);
+    min.x -= padding;
+    min.y -= padding;
+    max.x += padding;
+    max.y += padding;
+    let wh = max - min;
+
+    let res_x = ((pixels as f64 / (wh.y / wh.x)).sqrt() as usize).max(1);
+    let res_y = ((pixels as f64 / (wh.x / wh.y)).sqrt() as usize).max(1);
+    return BoundingBoxes {
+      min,
+      max,
+      wh,
+      res: (res_x, res_y),
+    };
+  }
 }
 
 pub async fn do_montecarlo() {
   let state = Arc::new(crate::room_state::get_config());
 
   let limits = ParamRanges {
-    points_limits: state.radio_points.iter().map(|p| (p.power_min, p.power_max)).collect(),
+    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
   };
 
-  let mut rng = rand::thread_rng();
+  let mut rng = rand::rngs::StdRng::from_entropy();
 
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
-  let (best_tx, best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
+  let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
 
-  tokio::spawn(async move {
-    while let Ok(()) = best_rx.changed().await {
-      let new_state = best_rx.borrow();
-      if let Some(new_state) = *new_state {
-        heatmap::next_image(&new_state);
-        tokio::time::sleep(Duration::from_secs(2)).await;
+  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
+  let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
+  // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
+  // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
+
+  println!("measure {:?}", measure);
+  println!("render {:?}\n\n", render);
+
+  {
+    let state = state.clone();
+    tokio::spawn(async move {
+      println!("Entered rx");
+      while let Ok(()) = best_rx.changed().await {
+        println!("iter_rx");
+        let new_state = best_rx.borrow().as_ref().map(|v| v.clone());
+        if let Some(ns) = new_state {
+          heatmap::next_image(render.clone(), state.clone(), ns.clone()).await;
+          tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+      }
+      println!("left rx");
+    });
+  }
+
+  let mut max_sinr = f64::NEG_INFINITY;
+
+  let mut iterations = 0;
+  let mut next_check = 0;
+  let mut last_print = Instant::now();
+
+  let mut super_uper_min = f64::NEG_INFINITY;
+
+  'monte_carlo: loop {
+    if iterations > next_check {
+      next_check += 100;
+      let now = Instant::now();
+      if now.duration_since(last_print).as_secs() > 0 {
+        last_print = last_print + Duration::from_secs(1);
+        println!("Iterations: {iterations}");
       }
     }
-  });
-
-  let max_sinr = f64::NEG_INFINITY;
-
-  loop {
+    iterations += 1;
     let next_guess = Arc::new(RoomState2 {
-      points_signal: limits.points_limits.iter().map(|(min, max)| rng.gen_range(*min..=*max)).collect(),
+      points_signal_dbm: limits.points_limits_dbm.iter().map(|max| rng.gen_range(0.0..=*max)).collect(),
+      // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| 200f64).collect(),
     });
 
     // TODO: map size должен включать все стены.
     let mut left_to_solve = Vec::new();
-    for (y_from, y_to, slices) in chop_ys(map_size, threads.max(32)) {
+    for (y_from, y_to, _) in chop_ys(measure.res.1, 1) {
       let next_guess = next_guess.clone();
       let state = state.clone();
+      let measure = measure.clone();
       left_to_solve.push(tokio::spawn(async move {
-        solve_slice(y_from, y_to, &*next_guess, &*state)
+        solve_slice(&*measure, y_from, y_to, &*next_guess, &*state)
       }));
     }
-    let mut signal = 0f64;
-    let mut noise = 0f64;
+    let mut signal_mw = 0f64;
+    let mut noise_mw = 0f64;
     for i in left_to_solve {
-      let (s, n) = i.await.unwrap();
-      signal += s;
-      noise += n;
+      let (s, n, min_sinr_dbm) = i.await.unwrap();
+      signal_mw += s;
+      noise_mw += n;
+      if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
+        super_uper_min = min_sinr_dbm;
+        println!("min_sinr: {min_sinr_dbm}dbm");
+      }
+      if min_sinr_dbm < -5.0 {
+        continue 'monte_carlo;
+      }
     }
-    let sinr = signal / (signal + noise);
-    if sinr > max_sinr {
-      max_sinr = sinr;
+    let sinr_avg = signal_mw / noise_mw;
+    if sinr_avg > max_sinr {
+      max_sinr = sinr_avg;
+      println!("min_sinr_sum: {}mw", sinr_avg);
       best_tx.send(Some(next_guess)).unwrap();
     }
   }

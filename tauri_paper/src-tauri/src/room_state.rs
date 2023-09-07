@@ -8,6 +8,36 @@ pub struct Pos {
   pub y: f64,
 }
 
+impl core::ops::Sub for Pos {
+  type Output = Pos;
+  fn sub(self, rhs: Pos) -> Pos {
+    Pos {
+      x: self.x - rhs.x,
+      y: self.y - rhs.y,
+    }
+  }
+}
+
+impl core::ops::Add for Pos {
+  type Output = Pos;
+  fn add(self, rhs: Pos) -> Pos {
+    Pos {
+      x: self.x + rhs.x,
+      y: self.y + rhs.y,
+    }
+  }
+}
+
+impl core::ops::Mul<f64> for Pos {
+  type Output = Pos;
+  fn mul(self, rhs: f64) -> Pos {
+    Pos {
+      x: self.x * rhs,
+      y: self.y * rhs,
+    }
+  }
+}
+
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Px {
   pub x: isize,
@@ -32,18 +62,17 @@ pub struct Wall {
 pub struct RadioPoint {
   pub pos: Pos,
   pub power: f64,
-  pub id: usize,
-  pub power_min: f64,
-  pub power_max: f64,
+  pub power_max_mw: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RadioZone {
   pub desired_point_id: usize,
+  /// По часовой стрелке.
   pub points: Vec<Pos>,
-  pub r: i32,
-  pub g: i32,
-  pub b: i32,
+  pub r: u8,
+  pub g: u8,
+  pub b: u8
 }
 
 impl Pos {
@@ -74,7 +103,25 @@ pub fn write_config(config: RoomState) {
 
 pub fn load_config() {
   let file = std::fs::read_to_string("map.json").unwrap();
-  *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
+  let mut json: RoomState = serde_json::from_str(&file).unwrap();
+  let meter_scale = 12.0;
+  for p in json.radio_points.iter_mut() {
+    p.pos.x *= meter_scale;
+    p.pos.y *= meter_scale;
+  }
+  for z in json.radio_zones.iter_mut() {
+    for p in z.points.iter_mut() {
+      p.x *= meter_scale;
+      p.y *= meter_scale;
+    }
+  }
+  for w in json.walls.iter_mut() {
+    w.a.x *= meter_scale;
+    w.a.y *= meter_scale;
+    w.b.x *= meter_scale;
+    w.b.y *= meter_scale;
+  }
+  *STATE.lock().unwrap() = json;
 }
 
 #[tauri::command]
