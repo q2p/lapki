@@ -2,50 +2,40 @@ import { event } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/tauri";
 import { log } from "console";
 import e from "express";
-import Konva from 'konva';
 
-// interface Config {
-//   walls: Wall[];
-//   radio_points: RadioPoint[];
-//   radio_zones: RadioZone[];
-// }
+type Config = {
+  walls: Wall[];
+  radio_points: RadioPoint[];
+  radio_zones: RadioZone[];
+}
 
-// interface Wall {
-//   a: Point2d;
-//   b: Point2d;
-//   damping: number;
-// }
+type Wall = {
+  a: Point2d;
+  b: Point2d;
+  damping: number;
+}
 
-// interface RadioPoint {
-//   pos: Point2d;
-//   power: number;
-// }
+type RadioPoint = {
+  pos: Point2d;
+  power: number;
+}
 
-// interface RadioZone {
-//   points: Point2d[];
-// }
+type RadioZone = {
+  points: Point2d[];
+}
 
-// interface Point2d {
-//   x: number;
-//   y: number;
-// }
+type Point2d = {
+  x: number;
+  y: number;
+}
 
-// async function get_config(): Promise<Config>{
-//   return invoke("get_config")
-//     .then((cfg: Config) => {return cfg} );
-// }
+async function get_config(): Promise<Config>{
+  return await invoke("get_config") as Config
+}
 
-// let config: Config = await get_config();
+let config: Config = await get_config();
 
-// const stage = new Konva.Stage({
-//   container: 'container',
-//   width: 1000,
-//   height: 1000,
-//   draggable: true
-// });
-
-// const layer = new Konva.Layer();
-// stage.add(layer);
+console.log(config)
 
 // //50px = 1m
 // const WIDTH = 60;
@@ -142,10 +132,6 @@ import Konva from 'konva';
 //   stage.position(newPos);
 // });
 
-// drawGrid();
-// drawLines();
-// layer.draw();
-
 // // let container = stage.container();
 // // // make container focusable
 // // container.tabIndex = 1;
@@ -191,14 +177,14 @@ import Konva from 'konva';
 //////////////////////////
 //////////////////////////
 
-// let elements = [
-//   {label: 'max red', x: 100, y: 100, color: "red"},
-//   {label: 'min red', x: 75, y: 100, color: "red"},
-//   {label: 'max blue', x: 200, y: 200, color: "blue"},
-//   {label: 'min blue', x: 150, y: 200, color: "blue"},
-//   {label: 'max green', x: 150, y: 150, color: "green"},
-//   {label: 'min green', x: 100, y: 150, color: "green"},
-// ];
+const elements = [
+  {label: 'max red', x: 100, y: 100, color: "red"},
+  {label: 'min red', x: 75, y: 100, color: "red"},
+  {label: 'max blue', x: 200, y: 200, color: "blue"},
+  {label: 'min blue', x: 150, y: 200, color: "blue"},
+  {label: 'max green', x: 150, y: 150, color: "green"},
+  {label: 'min green', x: 100, y: 150, color: "green"},
+];
 
 // let img = document.getElementById('rimg');
 // let img_wh = 8;
@@ -222,8 +208,8 @@ import Konva from 'konva';
 //   box.style.color = "white";
 //   // box.style.border = "2px solid black";
 //   box.style.borderRadius = "5px";
-//   box.style.paddingLeft = "6px";  
-//   box.style.paddingRight = "6px";  
+//   box.style.paddingLeft = "6px";
+//   box.style.paddingRight = "6px";
 //   box.style.paddingTop = "2px";
 //   box.style.paddingBottom = "2px";
 //   box.style.left = (el.x + img_wh - 0.5).toString() + "px";
@@ -245,9 +231,9 @@ import Konva from 'konva';
 //     }
 
 //     let rect = el.getBoundingClientRect();
-//     if(rect.bottom > prev_rect.top 
-//       && rect.right > prev_rect.left 
-//       && rect.top < prev_rect.bottom 
+//     if(rect.bottom > prev_rect.top
+//       && rect.right > prev_rect.left
+//       && rect.top < prev_rect.bottom
 //       && rect.left < prev_rect.right) {
 //         if (rect.bottom == prev_rect.bottom && rect.top === prev_rect.top) {
 //           prev!.style.top = (prev.offsetTop - prev.clientHeight).toString() + "px";
@@ -272,11 +258,11 @@ import Konva from 'konva';
 //         prev_rect = el.getBoundingClientRect();
 //         return;
 //       }
-  
+
 //       let rect = el.getBoundingClientRect();
-//       if(rect.bottom > prev_rect.top 
-//         && rect.right > prev_rect.left 
-//         && rect.top < prev_rect.bottom 
+//       if(rect.bottom > prev_rect.top
+//         && rect.right > prev_rect.left
+//         && rect.top < prev_rect.bottom
 //         && rect.left < prev_rect.right) {
 //           let dy = Math.abs(rect.top - prev_rect.bottom);
 //           let dx = Math.abs(rect.left - prev_rect.right);
@@ -311,42 +297,158 @@ const xmin = 5.2
 const ymin = 12.4
 const xmax = 59.6
 const ymax = 52.4
+const rimg_yc = (ymin + ymax)/2
+const rimg_xc = (xmin + xmax)/2
 
-function draw_grid () {
-  let canvas = document.getElementById("rimg_canvas") as HTMLCanvasElement;
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  let ctx = canvas.getContext("2d")!;
+let camX = 0;
+let camY = 0;
 
-  let image = new Image();
-  image.src = "../rimg3.png";
-  
-  let offsetX = 0;
-  let offsetY = 0;
-  let zoom = 10;
-  let camX = offsetX;
-  let camY = offsetY;
+const canvas = document.createElement("canvas")
+document.body.appendChild(canvas)
+const ctx = canvas.getContext("2d")!;
 
-  image.onload = function () {
-    ctx.globalAlpha = 0.5;
-    ctx.drawImage(image, (xmin-camX)*zoom, (ymin-camY)*zoom, (xmax-xmin)*zoom, (ymax-ymin)*zoom)
-    ctx.globalAlpha = 1;
+let image_loaded = false
+const image = new Image();
+image.src = "../rimg3.png";
+image.onload = function () { image_loaded = true }
+
+const wall_thickness = 8
+
+let zoom_pow = 1
+let zoom_target = 32
+let zoom = zoom_target
+
+window.addEventListener("wheel", function(e: WheelEvent) {
+  zoom_pow = Math.max(-4, Math.min(6, zoom_pow - e.deltaY / 100))
+  zoom_target = 32 * Math.pow(1.5, zoom_pow)
+})
+
+window.addEventListener("mousemove", function(e) {
+  if (is_pressing) {
+    camX = (canvas.width /2 - e.clientX) / zoom + anchorX
+    camY = (canvas.height/2 - e.clientY) / zoom + anchorY
   }
+})
 
-  const grid_size = 1 * zoom;
-  for (let iy = 0; iy !== Math.floor(canvas.height / grid_size) + 1; iy++) {
-    const ypos = offsetY + iy * grid_size;
+let anchorX = 0
+let anchorY = 0
+let is_pressing = false
+
+window.addEventListener("mousedown", function(e) {
+  is_pressing = true
+  anchorX = camX + (e.clientX - canvas.width /2) / zoom
+  anchorY = camY + (e.clientY - canvas.height/2) / zoom
+})
+
+window.addEventListener("mouseup", function() {
+  is_pressing = false
+})
+
+function grid(offsetX: number, offsetY: number, grid_size_px: number, color: string) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1
+  ctx.beginPath();
+  for (let iy = -1; iy !== Math.floor(canvas.height / grid_size_px) + 2; iy++) {
+    const ypos = Math.round((iy * grid_size_px) - (offsetY * zoom) % grid_size_px);
     ctx.moveTo(0, ypos);
     ctx.lineTo(canvas.width, ypos);
   }
-  for (let ix = 0; ix !== Math.floor(canvas.width / grid_size) + 1; ix++) {
-    const xpos = offsetX + ix * grid_size;
+  for (let ix = -1; ix !== Math.floor(canvas.width / grid_size_px) + 2; ix++) {
+    const xpos = Math.round((ix * grid_size_px) - (offsetX * zoom) % grid_size_px);
     ctx.moveTo(xpos, 0);
     ctx.lineTo(xpos, canvas.height);
   }
-
-  ctx.strokeStyle = "black";
   ctx.stroke();
 }
 
-draw_grid();
+function raf() {
+  requestAnimationFrame(raf)
+
+  // const t = new Date().getTime()
+
+  zoom = zoom_target * 0.1 + zoom * 0.9
+
+  // let camX = rimg_xc+16*Math.sin(t*0.0001);
+  // let camY = rimg_yc+16*Math.cos(t*0.0001);
+  // let zoom = 24+8*Math.cos(1253.0+t*0.0001);
+  // zoom = 32
+  let offsetX = camX - canvas.width / (2*zoom);
+  let offsetY = camY - canvas.height / (2*zoom);
+
+  ctx.fillStyle = "#fff"
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+
+  if (zoom >= 128) {
+    grid(offsetX, offsetY, zoom/10, "#999")
+  }
+  if (zoom >= 8) {
+    grid(offsetX, offsetY, zoom, "#000")
+  }
+
+  ctx.globalAlpha = 0.5;
+  if (image_loaded) {
+    const dx = Math.round((xmin-offsetX)*zoom)
+    const dy = Math.round((ymin-offsetY)*zoom)
+    const rx = Math.round((xmax-xmin)*zoom)
+    const ry = Math.round((ymax-ymin)*zoom)
+    ctx.drawImage(image, dx, dy, rx, ry)
+    ctx.fillRect(0, 0, dx, canvas.height)
+    ctx.fillRect(dx+rx, 0, canvas.width, canvas.height)
+    ctx.fillRect(dx, 0, rx, dy)
+    ctx.fillRect(dx, dy+ry, rx, canvas.height)
+  } else {
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.lineWidth = wall_thickness
+  ctx.strokeStyle = "#000";
+  ctx.fillStyle = "#000"
+  ctx.beginPath();
+  for (const w of config.walls) {
+    // w.a.x = Math.round(w.a.x)
+    // w.a.y = Math.round(w.a.y)
+    // w.b.x = Math.round(w.b.x)
+    // w.b.y = Math.round(w.b.y)
+    const xmin = Math.round((Math.min(w.a.x, w.b.x)-offsetX)*zoom)
+    const xmax = Math.round((Math.max(w.a.x, w.b.x)-offsetX)*zoom)
+    const ymin = Math.round((Math.min(w.a.y, w.b.y)-offsetY)*zoom)
+    const ymax = Math.round((Math.max(w.a.y, w.b.y)-offsetY)*zoom)
+    ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
+    // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
+    // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
+  }
+  ctx.stroke();
+
+  const scales = [1, 2, 5]
+  for (let i = -10; i !== 32; i++) {
+    const decs = Math.floor(i / 3)
+    const scale = scales[((i % 3) + 3) % 3]
+    const meters = Math.pow(10, decs) * scale
+    if (meters * zoom > 64) {
+      ctx.lineWidth = 1
+      ctx.strokeStyle = "#000";
+      ctx.fillStyle = "#000"
+
+      ctx.font = "bold 22px sans-serif"
+      const width = Math.round(meters * zoom)
+      ctx.textAlign = "center"
+      ctx.fillText(`${meters}m`, 32 + width/2, canvas.height-50)
+      ctx.fillRect(32, canvas.height-34, width, 2)
+      ctx.fillRect(32      , canvas.height-37, 2, 8)
+      ctx.fillRect(32+width, canvas.height-37, 2, 8)
+      break
+    }
+  }
+}
+
+function resize() {
+  console.log("onresize")
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+window.addEventListener("resize", resize)
+document.addEventListener("resize", resize)
+resize()
+requestAnimationFrame(raf)
