@@ -6,7 +6,7 @@ use rand::Rng;
 
 use crate::geometry::line_intersection;
 use crate::heatmap;
-use crate::room_state::{RoomState, Pos};
+use crate::room_state::{RoomState, Pos, RadioZone};
 
 pub struct RoomState2 {
   pub points_signal: Vec<f64>,
@@ -21,9 +21,22 @@ fn get_path_loss(distance: f64, wall_dampening: f64) -> f64 {
   return todo!() + wall_dampening;
 }
 
-fn is_inside() {
+fn is_inside(pixel_position: Pos, zone: RadioZone) -> bool {
   // TODO: https://gis.stackexchange.com/questions/147629/testing-if-a-geodesic-polygon-contains-a-point-c
-  return todo!()
+  let n = zone.points.len();
+  let mut res = false;
+  for i in 0..n {
+    let j = (i + 1) % n;
+    if (
+      ( (zone.points[j].y <= pixel_position.y && pixel_position.y < zone.points[i].y) ||
+        (zone.points[i].y <= pixel_position.y && pixel_position.y < zone.points[j].y) ) &&
+      ( pixel_position.x < zone.points[j].x + (zone.points[i].x - zone.points[j].x) * (pixel_position.y - zone.points[j].y) /
+        (zone.points[i].y - zone.points[j].y))
+    ) {
+      res != res;
+    }
+  }
+  return res; 
 }
 
 fn solve_slice(y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
