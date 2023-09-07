@@ -191,117 +191,162 @@ import Konva from 'konva';
 //////////////////////////
 //////////////////////////
 
-let elements = [
-  {label: 'max red', x: 100, y: 100, color: "red"},
-  {label: 'min red', x: 75, y: 100, color: "red"},
-  {label: 'max blue', x: 200, y: 200, color: "blue"},
-  {label: 'min blue', x: 150, y: 200, color: "blue"},
-  {label: 'max green', x: 150, y: 150, color: "green"},
-  {label: 'min green', x: 100, y: 150, color: "green"},
-];
+// let elements = [
+//   {label: 'max red', x: 100, y: 100, color: "red"},
+//   {label: 'min red', x: 75, y: 100, color: "red"},
+//   {label: 'max blue', x: 200, y: 200, color: "blue"},
+//   {label: 'min blue', x: 150, y: 200, color: "blue"},
+//   {label: 'max green', x: 150, y: 150, color: "green"},
+//   {label: 'min green', x: 100, y: 150, color: "green"},
+// ];
 
-let img = document.getElementById('rimg');
-let img_wh = 8;
+// let img = document.getElementById('rimg');
+// let img_wh = 8;
 
-for (const el of elements) {
-  const img = document.createElement('div');
-  img.style.position = "absolute";
-  img.style.left = `${el.x}px`;
-  img.style.top = `${el.y}px`;
-  img.style.border = "2px solid black";
-  img.style.borderRadius = "100%";
-  img.style.width = img_wh.toString() + "px";
-  img.style.height = img_wh.toString() + "px";
-  img.style.backgroundColor = el.color;
+// for (const el of elements) {
+//   const img = document.createElement('div');
+//   img.style.position = "absolute";
+//   img.style.left = `${el.x}px`;
+//   img.style.top = `${el.y}px`;
+//   img.style.border = "2px solid black";
+//   img.style.borderRadius = "100%";
+//   img.style.width = img_wh.toString() + "px";
+//   img.style.height = img_wh.toString() + "px";
+//   img.style.backgroundColor = el.color;
 
-  let box = document.createElement('span');
-  box.textContent = el.label;
-  box.style.position = "absolute";
-  box.style.opacity = "0.7";
-  box.style.background = "#333";
-  box.style.color = "white";
-  // box.style.border = "2px solid black";
-  box.style.borderRadius = "5px";
-  box.style.paddingLeft = "6px";  
-  box.style.paddingRight = "6px";  
-  box.style.paddingTop = "2px";
-  box.style.paddingBottom = "2px";
-  box.style.left = (el.x + img_wh - 0.5).toString() + "px";
-  box.style.top = (el.y).toString() + "px";
-  document.body.appendChild(box);
-  document.body.appendChild(img);
-};
+//   let box = document.createElement('span');
+//   box.textContent = el.label;
+//   box.style.position = "absolute";
+//   box.style.opacity = "0.7";
+//   box.style.background = "#333";
+//   box.style.color = "white";
+//   // box.style.border = "2px solid black";
+//   box.style.borderRadius = "5px";
+//   box.style.paddingLeft = "6px";  
+//   box.style.paddingRight = "6px";  
+//   box.style.paddingTop = "2px";
+//   box.style.paddingBottom = "2px";
+//   box.style.left = (el.x + img_wh - 0.5).toString() + "px";
+//   box.style.top = (el.y).toString() + "px";
+//   document.body.appendChild(box);
+//   document.body.appendChild(img);
+// };
 
-function push_aside() {
-  let spans = document.querySelectorAll('span');
-  let prev: HTMLSpanElement | null = null;
-  let prev_rect: DOMRect | null = null;
+// function push_aside() {
+//   let spans = document.querySelectorAll('span');
+//   let prev: HTMLSpanElement | null = null;
+//   let prev_rect: DOMRect | null = null;
 
-  spans.forEach(function(el) {
-    if (prev === null && prev_rect === null) {
-      prev = el;
-      prev_rect = el.getBoundingClientRect();
-      return;
-    }
+//   spans.forEach(function(el) {
+//     if (prev === null && prev_rect === null) {
+//       prev = el;
+//       prev_rect = el.getBoundingClientRect();
+//       return;
+//     }
 
-    let rect = el.getBoundingClientRect();
-    if(rect.bottom > prev_rect.top 
-      && rect.right > prev_rect.left 
-      && rect.top < prev_rect.bottom 
-      && rect.left < prev_rect.right) {
-        if (rect.bottom == prev_rect.bottom && rect.top === prev_rect.top) {
-          prev!.style.top = (prev.offsetTop - prev.clientHeight).toString() + "px";
-          el.style.top = (el.offsetTop + img_h).toString() + "px";
-          el.style.left = (el.offsetLeft - (el.clientWidth / 2)).toString() + "px";
-        }
-    }
-    prev = el;
-    prev_rect = el.getBoundingClientRect();
-  });
-}
-
-function push_aside2() {
-  let spans = document.querySelectorAll('span');
-  let prev: HTMLSpanElement | null = null;
-  let prev_rect: DOMRect | null = null;
-
-  // for(let i = 0; i < 100; i++) {
-    spans.forEach(function(el) {
-      if (prev === null && prev_rect === null) {
-        prev = el;
-        prev_rect = el.getBoundingClientRect();
-        return;
-      }
-  
-      let rect = el.getBoundingClientRect();
-      if(rect.bottom > prev_rect.top 
-        && rect.right > prev_rect.left 
-        && rect.top < prev_rect.bottom 
-        && rect.left < prev_rect.right) {
-          let dy = Math.abs(rect.top - prev_rect.bottom);
-          let dx = Math.abs(rect.left - prev_rect.right);
-          prev.style.top = (prev.offsetTop - dy).toString() + "px";
-
-          el.style.top = (el.offsetTop + img_wh).toString() + "px";
-          el.style.left = (el.offsetLeft - el.clientWidth - img_wh).toString() + "px";
-          prev.style.margin = "3px";
-          el.style.margin = "3px";
-          // prev.style.left = (prev.offsetLeft + (dx / 2)).toString() + "px";
-        }
-      prev = el;
-      prev_rect = el.getBoundingClientRect();
-    });
-  }
+//     let rect = el.getBoundingClientRect();
+//     if(rect.bottom > prev_rect.top 
+//       && rect.right > prev_rect.left 
+//       && rect.top < prev_rect.bottom 
+//       && rect.left < prev_rect.right) {
+//         if (rect.bottom == prev_rect.bottom && rect.top === prev_rect.top) {
+//           prev!.style.top = (prev.offsetTop - prev.clientHeight).toString() + "px";
+//           el.style.top = (el.offsetTop + img_h).toString() + "px";
+//           el.style.left = (el.offsetLeft - (el.clientWidth / 2)).toString() + "px";
+//         }
+//     }
+//     prev = el;
+//     prev_rect = el.getBoundingClientRect();
+//   });
 // }
 
-document.addEventListener('keydown', function(event) {
-  if (event.code == 'KeyZ') {
-    push_aside2();
-  }
-});
+// function push_aside2() {
+//   let spans = document.querySelectorAll('span');
+//   let prev: HTMLSpanElement | null = null;
+//   let prev_rect: DOMRect | null = null;
 
-document.addEventListener('keydown', function(event) {
-  if (event.code == 'KeyX') {
-    push_aside();
+//   // for(let i = 0; i < 100; i++) {
+//     spans.forEach(function(el) {
+//       if (prev === null && prev_rect === null) {
+//         prev = el;
+//         prev_rect = el.getBoundingClientRect();
+//         return;
+//       }
+  
+//       let rect = el.getBoundingClientRect();
+//       if(rect.bottom > prev_rect.top 
+//         && rect.right > prev_rect.left 
+//         && rect.top < prev_rect.bottom 
+//         && rect.left < prev_rect.right) {
+//           let dy = Math.abs(rect.top - prev_rect.bottom);
+//           let dx = Math.abs(rect.left - prev_rect.right);
+//           prev.style.top = (prev.offsetTop - dy).toString() + "px";
+
+//           el.style.top = (el.offsetTop + img_wh).toString() + "px";
+//           el.style.left = (el.offsetLeft - el.clientWidth - img_wh).toString() + "px";
+//           prev.style.margin = "3px";
+//           el.style.margin = "3px";
+//           // prev.style.left = (prev.offsetLeft + (dx / 2)).toString() + "px";
+//         }
+//       prev = el;
+//       prev_rect = el.getBoundingClientRect();
+//     });
+//   }
+// // }
+
+// document.addEventListener('keydown', function(event) {
+//   if (event.code == 'KeyZ') {
+//     push_aside2();
+//   }
+// });
+
+// document.addEventListener('keydown', function(event) {
+//   if (event.code == 'KeyX') {
+//     push_aside();
+//   }
+// });
+
+// rimg meters
+const xmin = 5.2
+const ymin = 12.4
+const xmax = 59.6
+const ymax = 52.4
+
+function draw_grid () {
+  let canvas = document.getElementById("rimg_canvas") as HTMLCanvasElement;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  let ctx = canvas.getContext("2d")!;
+
+  let image = new Image();
+  image.src = "../rimg3.png";
+  
+  let offsetX = 0;
+  let offsetY = 0;
+  let zoom = 10;
+  let camX = offsetX;
+  let camY = offsetY;
+
+  image.onload = function () {
+    ctx.globalAlpha = 0.5;
+    ctx.drawImage(image, (xmin-camX)*zoom, (ymin-camY)*zoom, (xmax-xmin)*zoom, (ymax-ymin)*zoom)
+    ctx.globalAlpha = 1;
   }
-});
+
+  const grid_size = 1 * zoom;
+  for (let iy = 0; iy !== Math.floor(canvas.height / grid_size) + 1; iy++) {
+    const ypos = offsetY + iy * grid_size;
+    ctx.moveTo(0, ypos);
+    ctx.lineTo(canvas.width, ypos);
+  }
+  for (let ix = 0; ix !== Math.floor(canvas.width / grid_size) + 1; ix++) {
+    const xpos = offsetX + ix * grid_size;
+    ctx.moveTo(xpos, 0);
+    ctx.lineTo(xpos, canvas.height);
+  }
+
+  ctx.strokeStyle = "black";
+  ctx.stroke();
+}
+
+draw_grid();
