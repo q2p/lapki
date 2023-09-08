@@ -104,23 +104,24 @@ pub fn write_config(config: RoomState) {
 pub fn load_config() {
   let file = std::fs::read_to_string("map.json").unwrap();
   let mut json: RoomState = serde_json::from_str(&file).unwrap();
-  let meter_scale = 12.0;
-  for p in json.radio_points.iter_mut() {
-    p.pos.x *= meter_scale;
-    p.pos.y *= meter_scale;
-  }
-  for z in json.radio_zones.iter_mut() {
-    for p in z.points.iter_mut() {
-      p.x *= meter_scale;
-      p.y *= meter_scale;
-    }
-  }
-  for w in json.walls.iter_mut() {
-    w.a.x *= meter_scale;
-    w.a.y *= meter_scale;
-    w.b.x *= meter_scale;
-    w.b.y *= meter_scale;
-  }
+  // let meter_scale = 12.0;
+  // for p in json.radio_points.iter_mut() {
+  //   p.pos.x *= meter_scale;
+  //   p.pos.y *= meter_scale;
+  // }
+  // for z in json.radio_zones.iter_mut() {
+  //   for p in z.points.iter_mut() {
+  //     p.x *= meter_scale;
+  //     p.y *= meter_scale;
+  //   }
+  // }
+  // for w in json.walls.iter_mut() {
+  //   w.a.x *= meter_scale;
+  //   w.a.y *= meter_scale;
+  //   w.b.x *= meter_scale;
+  //   w.b.y *= meter_scale;
+  // }
+  // write_config(json.clone());
   *STATE.lock().unwrap() = json;
 }
 
