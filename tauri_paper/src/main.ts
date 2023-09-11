@@ -177,121 +177,6 @@ console.log(config)
 //////////////////////////
 //////////////////////////
 
-const elements = [
-  {label: 'max red', x: 100, y: 100, color: "red"},
-  {label: 'min red', x: 75, y: 100, color: "red"},
-  {label: 'max blue', x: 200, y: 200, color: "blue"},
-  {label: 'min blue', x: 150, y: 200, color: "blue"},
-  {label: 'max green', x: 150, y: 150, color: "green"},
-  {label: 'min green', x: 100, y: 150, color: "green"},
-];
-
-// let img = document.getElementById('rimg');
-// let img_wh = 8;
-
-// for (const el of elements) {
-//   const img = document.createElement('div');
-//   img.style.position = "absolute";
-//   img.style.left = `${el.x}px`;
-//   img.style.top = `${el.y}px`;
-//   img.style.border = "2px solid black";
-//   img.style.borderRadius = "100%";
-//   img.style.width = img_wh.toString() + "px";
-//   img.style.height = img_wh.toString() + "px";
-//   img.style.backgroundColor = el.color;
-
-//   let box = document.createElement('span');
-//   box.textContent = el.label;
-//   box.style.position = "absolute";
-//   box.style.opacity = "0.7";
-//   box.style.background = "#333";
-//   box.style.color = "white";
-//   // box.style.border = "2px solid black";
-//   box.style.borderRadius = "5px";
-//   box.style.paddingLeft = "6px";
-//   box.style.paddingRight = "6px";
-//   box.style.paddingTop = "2px";
-//   box.style.paddingBottom = "2px";
-//   box.style.left = (el.x + img_wh - 0.5).toString() + "px";
-//   box.style.top = (el.y).toString() + "px";
-//   document.body.appendChild(box);
-//   document.body.appendChild(img);
-// };
-
-// function push_aside() {
-//   let spans = document.querySelectorAll('span');
-//   let prev: HTMLSpanElement | null = null;
-//   let prev_rect: DOMRect | null = null;
-
-//   spans.forEach(function(el) {
-//     if (prev === null && prev_rect === null) {
-//       prev = el;
-//       prev_rect = el.getBoundingClientRect();
-//       return;
-//     }
-
-//     let rect = el.getBoundingClientRect();
-//     if(rect.bottom > prev_rect.top
-//       && rect.right > prev_rect.left
-//       && rect.top < prev_rect.bottom
-//       && rect.left < prev_rect.right) {
-//         if (rect.bottom == prev_rect.bottom && rect.top === prev_rect.top) {
-//           prev!.style.top = (prev.offsetTop - prev.clientHeight).toString() + "px";
-//           el.style.top = (el.offsetTop + img_h).toString() + "px";
-//           el.style.left = (el.offsetLeft - (el.clientWidth / 2)).toString() + "px";
-//         }
-//     }
-//     prev = el;
-//     prev_rect = el.getBoundingClientRect();
-//   });
-// }
-
-// function push_aside2() {
-//   let spans = document.querySelectorAll('span');
-//   let prev: HTMLSpanElement | null = null;
-//   let prev_rect: DOMRect | null = null;
-
-//   // for(let i = 0; i < 100; i++) {
-//     spans.forEach(function(el) {
-//       if (prev === null && prev_rect === null) {
-//         prev = el;
-//         prev_rect = el.getBoundingClientRect();
-//         return;
-//       }
-
-//       let rect = el.getBoundingClientRect();
-//       if(rect.bottom > prev_rect.top
-//         && rect.right > prev_rect.left
-//         && rect.top < prev_rect.bottom
-//         && rect.left < prev_rect.right) {
-//           let dy = Math.abs(rect.top - prev_rect.bottom);
-//           let dx = Math.abs(rect.left - prev_rect.right);
-//           prev.style.top = (prev.offsetTop - dy).toString() + "px";
-
-//           el.style.top = (el.offsetTop + img_wh).toString() + "px";
-//           el.style.left = (el.offsetLeft - el.clientWidth - img_wh).toString() + "px";
-//           prev.style.margin = "3px";
-//           el.style.margin = "3px";
-//           // prev.style.left = (prev.offsetLeft + (dx / 2)).toString() + "px";
-//         }
-//       prev = el;
-//       prev_rect = el.getBoundingClientRect();
-//     });
-//   }
-// // }
-
-// document.addEventListener('keydown', function(event) {
-//   if (event.code == 'KeyZ') {
-//     push_aside2();
-//   }
-// });
-
-// document.addEventListener('keydown', function(event) {
-//   if (event.code == 'KeyX') {
-//     push_aside();
-//   }
-// });
-
 // rimg meters
 const xmin = 5.2
 const ymin = 12.4
@@ -361,6 +246,78 @@ function grid(offsetX: number, offsetY: number, grid_size_px: number, color: str
   ctx.stroke();
 }
 
+function legend(offsetX: number, offsetY: number) {
+  let i = 0
+  const dx = Math.round((xmin-offsetX)*zoom)
+  const dy = Math.round((ymin-offsetY)*zoom)
+  for (const el of elements) {
+    let wh
+    let text_size_base = 15
+    if (zoom >= 128) {
+      wh = Math.round(img_wh*zoom/100)
+      text_size_base = Math.round(text_size_base*zoom/100)
+    } else {
+      wh = img_wh    
+    }
+
+    let xpos = (Math.round(el.x * zoom - wh / 2)) + dx
+    let ypos = (Math.round(el.y * zoom - wh / 2)) + dy
+    
+    points[i].style.left = `${Math.round(xpos)}px`
+    points[i].style.top = `${Math.round(ypos)}px`
+    points[i].style.width = `${wh}px`
+    points[i].style.height = `${wh}px`
+
+    tooltips[i].style.left = `${xpos + wh}px`
+    tooltips[i].style.top = `${ypos}px`
+    tooltips[i].style.fontSize = `${text_size_base}px`
+
+    i++
+  }
+}
+
+const elements = [
+  {label: 'max red', x: 10, y: 5, color: "red"},
+  {label: 'min red', x: 5, y: 5, color: "red"},
+  {label: 'max blue', x: 12, y: 7, color: "blue"},
+  {label: 'min blue', x: 7, y: 7, color: "blue"},
+  {label: 'max green', x: 15, y: 10, color: "green"},
+  {label: 'min green', x: 10, y: 10, color: "green"},
+];
+
+// let img = document.getElementById('rimg');
+let img_wh = 8;
+
+for (const el of elements) {
+  const img = document.createElement('div');
+  img.className = "legend_point";
+  img.style.position = "absolute";
+  img.style.border = "2px solid black";
+  img.style.borderRadius = "100%";
+  img.style.width = img_wh.toString() + "px";
+  img.style.height = img_wh.toString() + "px";
+  img.style.backgroundColor = el.color;
+
+  let box = document.createElement('span');
+  box.className = "legend_tooltip";
+  box.textContent = el.label;
+  box.style.position = "absolute";
+  box.style.opacity = "0.7";
+  box.style.background = "#333";
+  box.style.color = "white";
+  box.style.borderRadius = "5px";
+  box.style.paddingLeft = "6px";
+  box.style.paddingRight = "6px";
+  box.style.paddingTop = "2px";
+  box.style.paddingBottom = "2px";
+
+  document.body.appendChild(box);
+  document.body.appendChild(img);
+};
+
+let points = document.getElementsByClassName("legend_point") as HTMLCollectionOf<HTMLDivElement>
+let tooltips = document.getElementsByClassName("legend_tooltip") as HTMLCollectionOf<HTMLSpanElement>
+
 function raf() {
   requestAnimationFrame(raf)
 
@@ -401,22 +358,60 @@ function raf() {
   }
   ctx.globalAlpha = 1;
 
+  //////////////////////////////
+
+  legend(offsetX, offsetY)
+  // for (let i = 0; i < tooltips.length - 1; i++) {
+  //   let curr = tooltips[i]
+  //   let next = tooltips[i+1]
+  //   let curr_rect = curr.getBoundingClientRect()
+  //   let next_rect = curr.getBoundingClientRect()
+
+  //   if (  !(curr_rect.top > next_rect.bottom ||
+  //         curr_rect.right < next_rect.left ||
+  //         curr_rect.bottom < next_rect.top ||
+  //         curr_rect.left > next_rect.right)
+  //   ){
+  //     let overlap_x = 0
+  //     let overlap_y = 0
+  //     if (curr_rect.top > next_rect.bottom) {
+  //       overlap_y = Math.abs(curr_rect.top - next_rect.bottom)
+  //     }
+  //     if (curr_rect.right < next_rect.left) {
+  //       overlap_x = Math.abs(curr_rect.right - next_rect.left)
+  //     }
+  //     if (curr_rect.bottom < next_rect.top) {
+  //       // overlap_y = Math.abs(curr_rect.bottom - next_rect.top)
+  //     }
+  //     if (curr_rect.left > next_rect.right) {
+  //       // overlap_x = Math.abs(curr_rect.left - next_rect.right)
+  //     }
+
+  //     curr.style.top = `${curr.offsetTop - overlap_y / 2}px`
+  //     next.style.top = `${curr.offsetTop + overlap_y / 2}px`
+  //     curr.style.left = `${curr.offsetLeft - overlap_x / 2}px`
+  //     next.style.left = `${curr.offsetLeft + overlap_x / 2}px`
+  //    }
+  // }
+
+  /////////////////////////////////////////
+
   ctx.lineWidth = wall_thickness
   ctx.strokeStyle = "#000";
   ctx.fillStyle = "#000"
   ctx.beginPath();
   for (const w of config.walls) {
-    // w.a.x = Math.round(w.a.x)
-    // w.a.y = Math.round(w.a.y)
-    // w.b.x = Math.round(w.b.x)
-    // w.b.y = Math.round(w.b.y)
+    w.a.x = Math.round(w.a.x)
+    w.a.y = Math.round(w.a.y)
+    w.b.x = Math.round(w.b.x)
+    w.b.y = Math.round(w.b.y)
     const xmin = Math.round((Math.min(w.a.x, w.b.x)-offsetX)*zoom)
     const xmax = Math.round((Math.max(w.a.x, w.b.x)-offsetX)*zoom)
     const ymin = Math.round((Math.min(w.a.y, w.b.y)-offsetY)*zoom)
     const ymax = Math.round((Math.max(w.a.y, w.b.y)-offsetY)*zoom)
     ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
-    // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
-    // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
+    ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
+    ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
   }
   ctx.stroke();
 
@@ -452,3 +447,35 @@ window.addEventListener("resize", resize)
 document.addEventListener("resize", resize)
 resize()
 requestAnimationFrame(raf)
+
+function push_aside2() {
+  let spans = document.querySelectorAll('span');
+  let prev: HTMLSpanElement | null = null;
+  let prev_rect: DOMRect | null = null;
+
+    spans.forEach(function(el) {
+      if (prev === null && prev_rect === null) {
+        prev = el;
+        prev_rect = el.getBoundingClientRect();
+        return;
+      }
+
+      let rect = el.getBoundingClientRect();
+      if(rect.bottom > prev_rect.top
+        && rect.right > prev_rect.left
+        && rect.top < prev_rect.bottom
+        && rect.left < prev_rect.right) {
+          let dy = Math.abs(rect.top - prev_rect.bottom);
+          let dx = Math.abs(rect.left - prev_rect.right);
+          prev.style.top = (prev.offsetTop - dy).toString() + "px";
+
+          el.style.top = (el.offsetTop + img_wh).toString() + "px";
+          el.style.left = (el.offsetLeft - el.clientWidth - img_wh).toString() + "px";
+          prev.style.margin = "3px";
+          el.style.margin = "3px";
+          // prev.style.left = (prev.offsetLeft + (dx / 2)).toString() + "px";
+        }
+      prev = el;
+      prev_rect = el.getBoundingClientRect();
+    });
+  }
