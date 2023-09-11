@@ -309,8 +309,6 @@ F: Fn(Pos) -> (u8, u8, u8) + Send + Sync + 'static,
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
 
-  paint_walls(&bb, &regular_state, state);
-
   save_image(bb.res, state, png_path);
 }
 
@@ -464,8 +462,6 @@ pub async fn do_image2(
 
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
-
-  paint_walls(&bb, &regular_state, state);
 
   save_image(bb.res, state, "../rimg3.png");
 }
