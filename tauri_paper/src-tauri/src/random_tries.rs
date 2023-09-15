@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
-use crate::geometry::line_intersection;
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -15,8 +14,8 @@ pub struct RoomState2 {
 }
 
 struct ParamRanges {
-  /// dBm max
-  pub points_limits_dbm: Vec<f64>,
+  /// mw max
+  pub points_limits_mws: Vec<f64>,
 }
 
 fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64, f64) {
@@ -94,7 +93,7 @@ pub async fn do_montecarlo() {
   let state = Arc::new(crate::room_state::get_config());
 
   let limits = ParamRanges {
-    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
+    points_limits_mws: state.radio_points.iter().map(|p| p.power_max_mw).collect(),
   };
 
   let mut rng = rand::rngs::StdRng::from_entropy();
@@ -108,8 +107,7 @@ pub async fn do_montecarlo() {
   // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
   // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
 
-  println!("measure {:?}", measure);
-  println!("render {:?}\n\n", render);
+  println!("measure {:?}\nrender {:?}\n\n", measure, render);
 
   {
     let state = state.clone();
@@ -146,8 +144,8 @@ pub async fn do_montecarlo() {
     }
     iterations += 1;
     let next_guess = Arc::new(RoomState2 {
-      points_signal_dbm: limits.points_limits_dbm.iter().map(|max| rng.gen_range(0.0..=*max)).collect(),
-      // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| 200f64).collect(),
+      points_signal_dbm: limits.points_limits_mws.iter().map(|max| mw_to_dbm(rng.gen_range(0.0..=*max))).collect(),
+      // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| mw_to_dbm(190f64)).collect(),
     });
 
     // TODO: map size должен включать все стены.
@@ -166,10 +164,10 @@ pub async fn do_montecarlo() {
       let (s, n, min_sinr_dbm) = i.await.unwrap();
       signal_mw += s;
       noise_mw += n;
-      if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
-        super_uper_min = min_sinr_dbm;
-        println!("min_sinr: {min_sinr_dbm}dbm");
-      }
+      // if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
+      //   super_uper_min = min_sinr_dbm;
+      //   println!("min_sinr: {min_sinr_dbm}dbm");
+      // }
       if min_sinr_dbm < -5.0 {
         continue 'monte_carlo;
       }

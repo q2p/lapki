@@ -25,7 +25,7 @@ fn main() {
       tauri::async_runtime::spawn(async move { random_tries::do_montecarlo().await });
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![room_state::get_config])
+    .invoke_handler(tauri::generate_handler![room_state::get_config, heatmap::get_active_best])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

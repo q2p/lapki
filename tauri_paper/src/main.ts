@@ -32,8 +32,33 @@ type Point2d = {
   y: number;
 }
 
+type ActiveBest = {
+  point_x: number;
+  point_y: number;
+  point_pow_mw: number;
+  min_sinr_dbm: number;
+  min_sinr_x: number;
+  min_sinr_y: number;
+  r: number;
+  g: number;
+  b: number;
+}
+
+class StoredBest {
+  constructor(
+    readonly x: number,
+    readonly y: number,
+    readonly tooltip: HTMLDivElement,
+    readonly circle: HTMLDivElement,
+  ) {}
+}
+
 async function get_config(): Promise<Config>{
   return await invoke("get_config") as Config
+}
+
+async function get_active_best(): Promise<ActiveBest[]>{
+  return await invoke("get_active_best") as ActiveBest[]
 }
 
 let config: Config = await get_config();
@@ -239,21 +264,55 @@ window.addEventListener("mouseup", function() {
   is_pressing = false
 })
 
-let active_set = 0
 window.addEventListener("keydown", function(e) {
   if (e.code === "KeyS") {
-    active_set = 1 - active_set
-    elements = all_els[active_set]
-    image.src = active_set === 0 ? "../rimg3.png" : "../rimg4.png";
+    image.src = "../rimg3.png";
     camX = rimg_xc
     camY = rimg_yc
     zoom_target = Math.min(
       canvas.width/(rimg_xmax-rimg_xmin),
       canvas.height/(rimg_ymax-rimg_ymin),
     )
+    get_active_best().then(update_active_els);
     zoom_pow = (Math.log(zoom_target / 32) / Math.log(1.5))
   }
 })
+
+function mk_tooltip(x: number, y: number, color: string, text: string) {
+  const img = document.createElement('div');
+  img.className = "legend_point";
+  img.style.position = "absolute";
+  img.style.border = "2px solid black";
+  img.style.borderRadius = "100%";
+  img.style.width = `${img_wh}px`;
+  img.style.height = `${img_wh}px`;
+  img.style.backgroundColor = color;
+
+  let box = document.createElement('div');
+  box.className = "legend_tooltip";
+  box.textContent = text;
+  box.style.position = "absolute";
+  box.style.background = "rgba(33,33,33,0.7)";
+  box.style.color = "white";
+  box.style.borderRadius = "5px";
+
+  document.body.appendChild(box);
+  document.body.appendChild(img);
+
+  elements.push(new StoredBest(x, y, box, img));
+}
+
+function update_active_els(a: ActiveBest[]) {
+  for (const el of elements) {
+    el.circle.remove();
+    el.tooltip.remove();
+  }
+  for (const el of a) {
+    const color = ac(el.r, el.g, el.b);
+    mk_tooltip(el.point_x, el.point_y, color, `Pow: ${el.point_pow_mw}mw`);
+    mk_tooltip(el.min_sinr_x, el.min_sinr_y, color, `Min SINR: ${el.min_sinr_dbm}dbm`);
+  };
+}
 
 function grid(offsetX: number, offsetY: number, grid_size_px: number, alpha: number) {
   ctx.strokeStyle = "#000";
@@ -285,20 +344,20 @@ function legend(offsetX: number, offsetY: number) {
     const xpos = Math.round(zoom * (el.x - offsetX) - wh / 2)
     const ypos = Math.round(zoom * (el.y - offsetY) - wh / 2)
 
-    points[i].style.left = `${Math.round(xpos)}px`
-    points[i].style.top = `${Math.round(ypos)}px`
-    points[i].style.width = `${wh}px`
-    points[i].style.height = `${wh}px`
+    el.circle.style.left = `${Math.round(xpos)}px`
+    el.circle.style.top = `${Math.round(ypos)}px`
+    el.circle.style.width = `${wh}px`
+    el.circle.style.height = `${wh}px`
 
-    tooltips[i].style.left = `${xpos}px`
-    tooltips[i].style.top = `${ypos + wh * 1.2}px`
-    tooltips[i].style.transform = "translateX(-50%)"
-    tooltips[i].style.fontFamily = `sans-serif`
-    tooltips[i].style.fontSize = `${text_size_base}px`
-    tooltips[i].style.paddingLeft = `${text_size_base*6/15}px`;
-    tooltips[i].style.paddingRight = `${text_size_base*6/15}px`;
-    tooltips[i].style.paddingTop = `${text_size_base*2/15}px`;
-    tooltips[i].style.paddingBottom = `${text_size_base*2/15}px`;
+    el.tooltip.style.left = `${xpos}px`
+    el.tooltip.style.top = `${ypos + wh * 1.2}px`
+    el.tooltip.style.transform = "translateX(-50%)"
+    el.tooltip.style.fontFamily = `sans-serif`
+    el.tooltip.style.fontSize = `${text_size_base}px`
+    el.tooltip.style.paddingLeft = `${text_size_base*6/15}px`;
+    el.tooltip.style.paddingRight = `${text_size_base*6/15}px`;
+    el.tooltip.style.paddingTop = `${text_size_base*2/15}px`;
+    el.tooltip.style.paddingBottom = `${text_size_base*2/15}px`;
 
     i++
   }
@@ -306,55 +365,17 @@ function legend(offsetX: number, offsetY: number) {
 
 function zc(i: number) {
   const z = config.radio_zones[i]
-  return "#" + (0x1000000 + z.r*256*256 + z.g*256 + z.b).toString(16).slice(-6)
+  return ac(z.r, z.g, z.b);
 }
 
-const all_els = [[
-  {label: 'Red Power: 109mv',   x: config.radio_points[0].pos.x, y: config.radio_points[0].pos.y, color: zc(0)},
-  {label: 'Green Power: 212mv', x: config.radio_points[1].pos.x, y: config.radio_points[1].pos.y, color: zc(1)},
-  {label: 'Blue Power: 184mv',  x: config.radio_points[2].pos.x, y: config.radio_points[2].pos.y, color: zc(2)},
-  {label: 'Min SINR Red: 15db',   x: 42.9, y: 36.1, color: zc(0)},
-  {label: 'Min SINR Green: 6db', x: 36.1, y: 22.1, color: zc(1)},
-  {label: 'Min SINR Blue: -2db',  x: 42.5, y: 21.9,  color: zc(2)},
-],
-[
-  {label: 'Max Red',   x: config.radio_points[0].pos.x, y: config.radio_points[0].pos.y, color: zc(0)},
-  {label: 'Max Green', x: config.radio_points[1].pos.x, y: config.radio_points[1].pos.y, color: zc(1)},
-  {label: 'Max Blue',  x: config.radio_points[2].pos.x, y: config.radio_points[2].pos.y, color: zc(2)},
-  {label: 'Min Red',   x: 42.9, y: 36.1, color: zc(0)},
-  {label: 'Min Green', x: 36.1, y: 22.1, color: zc(1)},
-  {label: 'Min Blue',  x: 41.9, y: 21.9,  color: zc(2)},
-]];
+function ac(r: number, g: number, b: number) {
+  return "#" + (0x1000000 + r*256*256 + g*256 + b).toString(16).slice(-6)
+}
 
-let elements = all_els[0]
+let elements: StoredBest[] = [];
 
 // let img = document.getElementById('rimg');
 const img_wh = 12;
-
-for (const el of elements) {
-  const img = document.createElement('div');
-  img.className = "legend_point";
-  img.style.position = "absolute";
-  img.style.border = "2px solid black";
-  img.style.borderRadius = "100%";
-  img.style.width = `${img_wh}px`;
-  img.style.height = `${img_wh}px`;
-  img.style.backgroundColor = el.color;
-
-  let box = document.createElement('span');
-  box.className = "legend_tooltip";
-  box.textContent = el.label;
-  box.style.position = "absolute";
-  box.style.background = "rgba(33,33,33,0.7)";
-  box.style.color = "white";
-  box.style.borderRadius = "5px";
-
-  document.body.appendChild(box);
-  document.body.appendChild(img);
-};
-
-let points = document.getElementsByClassName("legend_point") as HTMLCollectionOf<HTMLDivElement>
-let tooltips = document.getElementsByClassName("legend_tooltip") as HTMLCollectionOf<HTMLSpanElement>
 
 function raf() {
   requestAnimationFrame(raf)
