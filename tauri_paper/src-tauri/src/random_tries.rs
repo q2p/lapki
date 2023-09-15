@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use rand::{Rng, SeedableRng};
 
 use crate::geometry::line_intersection;
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -14,6 +14,7 @@ pub struct RoomState2 {
   pub points_signal_dbm: Vec<f64>,
 }
 
+#[derive(Debug)]
 struct ParamRanges {
   /// dBm max
   pub points_limits_dbm: Vec<f64>,
@@ -42,7 +43,7 @@ fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &Room
       let mwts: Vec<f64> = regular_state.radio_points
         .iter()
         .zip(this_guess.points_signal_dbm.iter())
-        .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
+        .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
         .collect();
 
       let signal_mw = mwts[desired_point_id];
@@ -97,6 +98,8 @@ pub async fn do_montecarlo() {
     points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
   };
 
+  println!("{:?}", limits);
+
   let mut rng = rand::rngs::StdRng::from_entropy();
 
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
@@ -104,7 +107,7 @@ pub async fn do_montecarlo() {
   let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
 
   let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
-  let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
+  let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
   // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
   // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
 
@@ -170,9 +173,9 @@ pub async fn do_montecarlo() {
         super_uper_min = min_sinr_dbm;
         println!("min_sinr: {min_sinr_dbm}dbm");
       }
-      if min_sinr_dbm < -5.0 {
-        continue 'monte_carlo;
-      }
+      // if min_sinr_dbm < -5.0 {
+      //   continue 'monte_carlo;
+      // }
     }
     let sinr_avg = signal_mw / noise_mw;
     if sinr_avg > max_sinr {
