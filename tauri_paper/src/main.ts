@@ -22,6 +22,9 @@ type RadioPoint = {
 
 type RadioZone = {
   points: Point2d[];
+  r: number,
+  g: number,
+  b: number,
 }
 
 type Point2d = {
@@ -178,24 +181,29 @@ console.log(config)
 //////////////////////////
 
 // rimg meters
-const xmin = 5.2
-const ymin = 12.4
-const xmax = 59.6
-const ymax = 52.4
-const rimg_yc = (ymin + ymax)/2
-const rimg_xc = (xmin + xmax)/2
+const rimg_xmin = 5
+const rimg_ymin = 12
+const rimg_xmax = 60 - 0*55/600
+const rimg_ymax = 52 - 0*40/436
+const rimg_yc = (rimg_ymin + rimg_ymax)/2
+const rimg_xc = (rimg_xmin + rimg_xmax)/2
 
-let camX = 0;
-let camY = 0;
+let camX = rimg_xc;
+let camY = rimg_yc;
+
+let cursor_x_m = 0
+let cursor_y_m = 0
 
 const canvas = document.createElement("canvas")
 document.body.appendChild(canvas)
 const ctx = canvas.getContext("2d")!;
 
-let image_loaded = false
 const image = new Image();
-image.src = "../rimg3.png";
-image.onload = function () { image_loaded = true }
+setInterval(function() {
+  if (!image.complete) {
+    image.src = image.src
+  }
+}, 200)
 
 const wall_thickness = 8
 
@@ -213,6 +221,8 @@ window.addEventListener("mousemove", function(e) {
     camX = (canvas.width /2 - e.clientX) / zoom + anchorX
     camY = (canvas.height/2 - e.clientY) / zoom + anchorY
   }
+  cursor_x_m = camX + (e.clientX - canvas.width  / 2) / zoom
+  cursor_y_m = camY + (e.clientY - canvas.height / 2) / zoom
 })
 
 let anchorX = 0
@@ -229,8 +239,24 @@ window.addEventListener("mouseup", function() {
   is_pressing = false
 })
 
-function grid(offsetX: number, offsetY: number, grid_size_px: number, color: string) {
-  ctx.strokeStyle = color;
+let active_set = 0
+window.addEventListener("keydown", function(e) {
+  if (e.code === "KeyS") {
+    active_set = 1 - active_set
+    elements = all_els[active_set]
+    image.src = active_set === 0 ? "../rimg3.png" : "../rimg4.png";
+    camX = rimg_xc
+    camY = rimg_yc
+    zoom_target = Math.min(
+      canvas.width/(rimg_xmax-rimg_xmin),
+      canvas.height/(rimg_ymax-rimg_ymin),
+    )
+    zoom_pow = (Math.log(zoom_target / 32) / Math.log(1.5))
+  }
+})
+
+function grid(offsetX: number, offsetY: number, grid_size_px: number, alpha: number) {
+  ctx.strokeStyle = "#000";
   ctx.lineWidth = 1
   ctx.beginPath();
   for (let iy = -1; iy !== Math.floor(canvas.height / grid_size_px) + 2; iy++) {
@@ -243,50 +269,67 @@ function grid(offsetX: number, offsetY: number, grid_size_px: number, color: str
     ctx.moveTo(xpos, 0);
     ctx.lineTo(xpos, canvas.height);
   }
+  ctx.globalAlpha = alpha
   ctx.stroke();
+  ctx.globalAlpha = 1.0
 }
 
 function legend(offsetX: number, offsetY: number) {
   let i = 0
-  const dx = Math.round((xmin-offsetX)*zoom)
-  const dy = Math.round((ymin-offsetY)*zoom)
   for (const el of elements) {
-    let wh
-    let text_size_base = 15
-    if (zoom >= 128) {
-      wh = Math.round(img_wh*zoom/100)
-      text_size_base = Math.round(text_size_base*zoom/100)
-    } else {
-      wh = img_wh    
-    }
+    let wh, text_size_base
+    const past_zoom = Math.max(1, zoom / 100)
+    wh = img_wh * past_zoom
+    text_size_base = 15 * past_zoom
 
-    let xpos = (Math.round(el.x * zoom - wh / 2)) + dx
-    let ypos = (Math.round(el.y * zoom - wh / 2)) + dy
-    
+    const xpos = Math.round(zoom * (el.x - offsetX) - wh / 2)
+    const ypos = Math.round(zoom * (el.y - offsetY) - wh / 2)
+
     points[i].style.left = `${Math.round(xpos)}px`
     points[i].style.top = `${Math.round(ypos)}px`
     points[i].style.width = `${wh}px`
     points[i].style.height = `${wh}px`
 
-    tooltips[i].style.left = `${xpos + wh}px`
-    tooltips[i].style.top = `${ypos}px`
+    tooltips[i].style.left = `${xpos}px`
+    tooltips[i].style.top = `${ypos + wh * 1.2}px`
+    tooltips[i].style.transform = "translateX(-50%)"
+    tooltips[i].style.fontFamily = `sans-serif`
     tooltips[i].style.fontSize = `${text_size_base}px`
+    tooltips[i].style.paddingLeft = `${text_size_base*6/15}px`;
+    tooltips[i].style.paddingRight = `${text_size_base*6/15}px`;
+    tooltips[i].style.paddingTop = `${text_size_base*2/15}px`;
+    tooltips[i].style.paddingBottom = `${text_size_base*2/15}px`;
 
     i++
   }
 }
 
-const elements = [
-  {label: 'max red', x: 10, y: 5, color: "red"},
-  {label: 'min red', x: 5, y: 5, color: "red"},
-  {label: 'max blue', x: 12, y: 7, color: "blue"},
-  {label: 'min blue', x: 7, y: 7, color: "blue"},
-  {label: 'max green', x: 15, y: 10, color: "green"},
-  {label: 'min green', x: 10, y: 10, color: "green"},
-];
+function zc(i: number) {
+  const z = config.radio_zones[i]
+  return "#" + (0x1000000 + z.r*256*256 + z.g*256 + z.b).toString(16).slice(-6)
+}
+
+const all_els = [[
+  {label: 'Red Power: 109mv',   x: config.radio_points[0].pos.x, y: config.radio_points[0].pos.y, color: zc(0)},
+  {label: 'Green Power: 212mv', x: config.radio_points[1].pos.x, y: config.radio_points[1].pos.y, color: zc(1)},
+  {label: 'Blue Power: 184mv',  x: config.radio_points[2].pos.x, y: config.radio_points[2].pos.y, color: zc(2)},
+  {label: 'Min SINR Red: 15db',   x: 42.9, y: 36.1, color: zc(0)},
+  {label: 'Min SINR Green: 6db', x: 36.1, y: 22.1, color: zc(1)},
+  {label: 'Min SINR Blue: -2db',  x: 42.5, y: 21.9,  color: zc(2)},
+],
+[
+  {label: 'Max Red',   x: config.radio_points[0].pos.x, y: config.radio_points[0].pos.y, color: zc(0)},
+  {label: 'Max Green', x: config.radio_points[1].pos.x, y: config.radio_points[1].pos.y, color: zc(1)},
+  {label: 'Max Blue',  x: config.radio_points[2].pos.x, y: config.radio_points[2].pos.y, color: zc(2)},
+  {label: 'Min Red',   x: 42.9, y: 36.1, color: zc(0)},
+  {label: 'Min Green', x: 36.1, y: 22.1, color: zc(1)},
+  {label: 'Min Blue',  x: 41.9, y: 21.9,  color: zc(2)},
+]];
+
+let elements = all_els[0]
 
 // let img = document.getElementById('rimg');
-let img_wh = 8;
+const img_wh = 12;
 
 for (const el of elements) {
   const img = document.createElement('div');
@@ -294,22 +337,17 @@ for (const el of elements) {
   img.style.position = "absolute";
   img.style.border = "2px solid black";
   img.style.borderRadius = "100%";
-  img.style.width = img_wh.toString() + "px";
-  img.style.height = img_wh.toString() + "px";
+  img.style.width = `${img_wh}px`;
+  img.style.height = `${img_wh}px`;
   img.style.backgroundColor = el.color;
 
   let box = document.createElement('span');
   box.className = "legend_tooltip";
   box.textContent = el.label;
   box.style.position = "absolute";
-  box.style.opacity = "0.7";
-  box.style.background = "#333";
+  box.style.background = "rgba(33,33,33,0.7)";
   box.style.color = "white";
   box.style.borderRadius = "5px";
-  box.style.paddingLeft = "6px";
-  box.style.paddingRight = "6px";
-  box.style.paddingTop = "2px";
-  box.style.paddingBottom = "2px";
 
   document.body.appendChild(box);
   document.body.appendChild(img);
@@ -324,6 +362,9 @@ function raf() {
   // const t = new Date().getTime()
 
   zoom = zoom_target * 0.1 + zoom * 0.9
+  if (Math.abs(zoom - zoom_target) < 0.001) {
+    zoom = zoom_target
+  }
 
   // let camX = rimg_xc+16*Math.sin(t*0.0001);
   // let camY = rimg_yc+16*Math.cos(t*0.0001);
@@ -335,19 +376,11 @@ function raf() {
   ctx.fillStyle = "#fff"
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
-  if (zoom >= 128) {
-    grid(offsetX, offsetY, zoom/10, "#999")
-  }
-  if (zoom >= 8) {
-    grid(offsetX, offsetY, zoom, "#000")
-  }
-
-  ctx.globalAlpha = 0.5;
-  if (image_loaded) {
-    const dx = Math.round((xmin-offsetX)*zoom)
-    const dy = Math.round((ymin-offsetY)*zoom)
-    const rx = Math.round((xmax-xmin)*zoom)
-    const ry = Math.round((ymax-ymin)*zoom)
+  if (image.complete) {
+    const dx = Math.round((rimg_xmin-offsetX)*zoom)
+    const dy = Math.round((rimg_ymin-offsetY)*zoom)
+    const rx = Math.round((rimg_xmax-rimg_xmin)*zoom)
+    const ry = Math.round((rimg_ymax-rimg_ymin)*zoom)
     ctx.drawImage(image, dx, dy, rx, ry)
     ctx.fillRect(0, 0, dx, canvas.height)
     ctx.fillRect(dx+rx, 0, canvas.width, canvas.height)
@@ -356,7 +389,13 @@ function raf() {
   } else {
     ctx.fillRect(0, 0, canvas.width, canvas.height)
   }
-  ctx.globalAlpha = 1;
+
+  if (zoom >= 128) {
+    grid(offsetX, offsetY, zoom/10, 0.5)
+  }
+  if (zoom >= 8) {
+    grid(offsetX, offsetY, zoom, 0.7)
+  }
 
   //////////////////////////////
 
@@ -401,17 +440,19 @@ function raf() {
   ctx.fillStyle = "#000"
   ctx.beginPath();
   for (const w of config.walls) {
-    w.a.x = Math.round(w.a.x)
-    w.a.y = Math.round(w.a.y)
-    w.b.x = Math.round(w.b.x)
-    w.b.y = Math.round(w.b.y)
     const xmin = Math.round((Math.min(w.a.x, w.b.x)-offsetX)*zoom)
     const xmax = Math.round((Math.max(w.a.x, w.b.x)-offsetX)*zoom)
     const ymin = Math.round((Math.min(w.a.y, w.b.y)-offsetY)*zoom)
     const ymax = Math.round((Math.max(w.a.y, w.b.y)-offsetY)*zoom)
     ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
-    ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
-    ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
+
+    // Раскомментить для угловатых стен.
+    // w.a.x = Math.round(w.a.x)
+    // w.a.y = Math.round(w.a.y)
+    // w.b.x = Math.round(w.b.x)
+    // w.b.y = Math.round(w.b.y)
+    // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
+    // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
   }
   ctx.stroke();
 
@@ -447,35 +488,3 @@ window.addEventListener("resize", resize)
 document.addEventListener("resize", resize)
 resize()
 requestAnimationFrame(raf)
-
-function push_aside2() {
-  let spans = document.querySelectorAll('span');
-  let prev: HTMLSpanElement | null = null;
-  let prev_rect: DOMRect | null = null;
-
-    spans.forEach(function(el) {
-      if (prev === null && prev_rect === null) {
-        prev = el;
-        prev_rect = el.getBoundingClientRect();
-        return;
-      }
-
-      let rect = el.getBoundingClientRect();
-      if(rect.bottom > prev_rect.top
-        && rect.right > prev_rect.left
-        && rect.top < prev_rect.bottom
-        && rect.left < prev_rect.right) {
-          let dy = Math.abs(rect.top - prev_rect.bottom);
-          let dx = Math.abs(rect.left - prev_rect.right);
-          prev.style.top = (prev.offsetTop - dy).toString() + "px";
-
-          el.style.top = (el.offsetTop + img_wh).toString() + "px";
-          el.style.left = (el.offsetLeft - el.clientWidth - img_wh).toString() + "px";
-          prev.style.margin = "3px";
-          el.style.margin = "3px";
-          // prev.style.left = (prev.offsetLeft + (dx / 2)).toString() + "px";
-        }
-      prev = el;
-      prev_rect = el.getBoundingClientRect();
-    });
-  }
