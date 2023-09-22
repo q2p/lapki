@@ -62,6 +62,7 @@ pub struct Wall {
 pub struct RadioPoint {
   pub pos: Pos,
   pub power: f64,
+  pub power_min_mw: f64,
   pub power_max_mw: f64,
 }
 

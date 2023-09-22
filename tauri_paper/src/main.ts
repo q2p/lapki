@@ -1,7 +1,5 @@
 import { event } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/tauri";
-import { log } from "console";
-import e from "express";
 
 type Config = {
   walls: Wall[];
@@ -167,17 +165,6 @@ console.log(config)
 // // let mem_pos = null;
 // // container.addEventListener('keydown', function (e) {
 // //   if (e.keyCode === KEY_L) {
-// //     if (key_l_clicked == 1) {
-// //       pos = stage.getRelativePointerPosition();
-// //       let line = new Konva.Line({
-// //         x: 0,
-// //         y: 0,
-// //         points: [mem_pos.x, mem_pos.y, pos.x, pos.y],
-// //         stroke: 'black',
-// //         tension: 1
-// //       });
-// //       layer.add(line);
-// //     }
 // //     mem_pos = stage.getRelativePointerPosition();
 // //     key_l_clicked = 1;
 // //   } else if (e.keyCode == KEY_S){
@@ -218,6 +205,8 @@ let camY = rimg_yc;
 
 let cursor_x_m = 0
 let cursor_y_m = 0
+let cursor_x_p = 0
+let cursor_y_p = 0
 
 const canvas = document.createElement("canvas")
 document.body.appendChild(canvas)
@@ -242,22 +231,29 @@ window.addEventListener("wheel", function(e: WheelEvent) {
 })
 
 window.addEventListener("mousemove", function(e) {
+  cursor_x_p = e.clientX
+  cursor_y_p = e.clientY
   if (is_pressing) {
-    camX = (canvas.width /2 - e.clientX) / zoom + anchorX
-    camY = (canvas.height/2 - e.clientY) / zoom + anchorY
+    camX = anchor_x_m - (cursor_x_p - canvas.width  / 2) / zoom
+    camY = anchor_y_m - (cursor_y_p - canvas.height / 2) / zoom
   }
-  cursor_x_m = camX + (e.clientX - canvas.width  / 2) / zoom
-  cursor_y_m = camY + (e.clientY - canvas.height / 2) / zoom
+  cursor_x_m = camX + (cursor_x_p - canvas.width  / 2) / zoom
+  cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
 })
 
-let anchorX = 0
-let anchorY = 0
+let anchor_x_m = 0
+let anchor_y_m = 0
 let is_pressing = false
 
 window.addEventListener("mousedown", function(e) {
+  cursor_x_p = e.clientX
+  cursor_y_p = e.clientY
+
   is_pressing = true
-  anchorX = camX + (e.clientX - canvas.width /2) / zoom
-  anchorY = camY + (e.clientY - canvas.height/2) / zoom
+  cursor_x_m = camX + (cursor_x_p - canvas.width  / 2) / zoom
+  cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
+  anchor_x_m = cursor_x_m
+  anchor_y_m = cursor_y_m
 })
 
 window.addEventListener("mouseup", function() {
@@ -269,8 +265,8 @@ window.addEventListener("keydown", function(e) {
     image.src = "../rimg3.png";
     camX = rimg_xc
     camY = rimg_yc
-    zoom_target = Math.min(
-      canvas.width/(rimg_xmax-rimg_xmin),
+    zoom_target = Math.max(
+      canvas.width /(rimg_xmax-rimg_xmin),
       canvas.height/(rimg_ymax-rimg_ymin),
     )
     get_active_best().then(update_active_els);
@@ -309,8 +305,8 @@ function update_active_els(a: ActiveBest[]) {
   }
   for (const el of a) {
     const color = ac(el.r, el.g, el.b);
-    mk_tooltip(el.point_x, el.point_y, color, `Pow: ${el.point_pow_mw}mw`);
-    mk_tooltip(el.min_sinr_x, el.min_sinr_y, color, `Min SINR: ${el.min_sinr_dbm}dbm`);
+    mk_tooltip(el.point_x, el.point_y, color, `Pow: ${el.point_pow_mw.toPrecision(4)}mw`);
+    mk_tooltip(el.min_sinr_x, el.min_sinr_y, color, `Min SINR: ${el.min_sinr_dbm.toPrecision(4)}dbm`);
   };
 }
 
@@ -380,11 +376,19 @@ const img_wh = 12;
 function raf() {
   requestAnimationFrame(raf)
 
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
   // const t = new Date().getTime()
 
   zoom = zoom_target * 0.1 + zoom * 0.9
   if (Math.abs(zoom - zoom_target) < 0.001) {
     zoom = zoom_target
+  }
+
+  if (is_pressing) {
+    camX = anchor_x_m - (cursor_x_p - canvas.width  / 2) / zoom
+    camY = anchor_y_m - (cursor_y_p - canvas.height / 2) / zoom
   }
 
   // let camX = rimg_xc+16*Math.sin(t*0.0001);
