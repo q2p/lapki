@@ -6,12 +6,6 @@ mod heatmap;
 mod room_state;
 mod geometry;
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-  format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 fn main() {
   room_state::load_config();
   tauri::Builder::default()

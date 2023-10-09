@@ -565,7 +565,7 @@ fn save_image<P: AsRef<Path>>(res: (usize, usize), scene: &mut [u8], path: P) {
 
 pub fn pix_to_meter(bb: &BoundingBoxes, p: Px) -> Pos {
   Pos::new(
-    bb.min.x + p.x as f64 * bb.wh.x / bb.res.0 as f64 + (bb.wh.x / bb.res.0 as f64 / 2.0),
-    bb.min.y + p.y as f64 * bb.wh.y / bb.res.1 as f64 + (bb.wh.y / bb.res.1 as f64 / 2.0),
+    bb.min.x + p.x as f64 * bb.wh.x / bb.res.0 as f64 + (bb.wh.x / (2 * bb.res.0) as f64),
+    bb.min.y + p.y as f64 * bb.wh.y / bb.res.1 as f64 + (bb.wh.y / (2 * bb.res.1) as f64),
   )
 }
