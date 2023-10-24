@@ -3,7 +3,9 @@ use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
-use std::sync::{RwLock, Arc};
+use std::sync::{RwLock, Arc, Mutex};
+
+use serde::Serialize;
 
 use crate::geometry::line_intersection;
 use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
@@ -12,7 +14,7 @@ use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint};
 /// 5 GHz
 const CARRYING_FREQ: f64 = 5f64;
 
-pub const STATIC_NOISE_DBM:f64 = 0.2;
+pub const STATIC_NOISE_DBM:f64 = -140.0;
 
 // Для закраски используем таблицу переходов между цветами.
 //  хранит точку, где цвет наиболее интенсивный.
@@ -30,10 +32,15 @@ struct State {
 
 // Вызывается по таймеру и перерисовывает картинку
 pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
+  // let mut rng = StdRng::from_entropy();
+  // let shit_room = Arc::new(RoomState2 {
+  //   points_signal_dbm: vec![mw_to_dbm(10.0), mw_to_dbm(45.0), mw_to_dbm(15.0)],
+  // });
   next_image1(bb.clone(), regular_state.clone(), next_guess.clone()).await;
   // next_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
   // next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  do_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
+  do_image2(bb.clone(), regular_state.clone(), next_guess.clone(), "../rimg3.png").await;
+  // do_image2(bb.clone(), regular_state.clone(), shit_room.clone(), "../rimg4.png").await;
 }
 
 pub fn length(a: Pos, b: Pos) -> f64 {
@@ -121,7 +128,7 @@ pub async fn next_image1(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, 
     // Рассматриваем каждую точку доступа
 
     // Считаем силу сигнала и запоминаем самый сильный
-    let mut dbm = regular_state.radio_points
+    let dbm = regular_state.radio_points
       .iter()
       .zip(next_guess.points_signal_dbm.iter())
       .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
@@ -309,9 +316,31 @@ F: Fn(Pos) -> (u8, u8, u8) + Send + Sync + 'static,
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
 
-  paint_walls(&bb, &regular_state, state);
-
   save_image(bb.res, state, png_path);
+}
+
+#[derive(Clone, Serialize)]
+pub struct ActiveBestZone {
+  point_x: f64,
+  point_y: f64,
+  point_pow_mw: f64,
+  min_sinr_dbm: f64,
+  min_sinr_x: f64,
+  min_sinr_y: f64,
+  r: u8,
+  g: u8,
+  b: u8,
+}
+
+struct ActiveBest {
+  zones: Vec<ActiveBestZone>,
+}
+
+static ACTIVE_BEST: Mutex<ActiveBest> = Mutex::new(ActiveBest { zones: Vec::new() });
+
+#[tauri::command]
+pub fn get_active_best() -> Vec<ActiveBestZone> {
+  ACTIVE_BEST.lock().unwrap().zones.clone()
 }
 
 // Вызывается по таймеру и перерисовывает картинку
@@ -319,6 +348,7 @@ pub async fn do_image2(
   bb: Arc<BoundingBoxes>,
   regular_state: Arc<RoomState>,
   next_guess: Arc<RoomState2>,
+  path: &str,
 ) {
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
@@ -331,7 +361,7 @@ pub async fn do_image2(
 
     queued.push(tauri::async_runtime::spawn(async move {
       // Перебираем все пиксели на холсте
-      let mut min_max_sinr_per_zone = vec![(f64::MAX, f64::MIN); regular_state.radio_zones.len()].into_boxed_slice();
+      let mut min_max_sinr_per_zone = vec![(f64::MAX, f64::MIN, Pos { x: 0.0, y: 0.0 }); regular_state.radio_zones.len()].into_boxed_slice();
 
       for y in y_from..y_to {
         for x in 0..bb.res.0 {
@@ -344,7 +374,7 @@ pub async fn do_image2(
             .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
             .collect();
 
-          for (zone, (min, max)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
+          for (zone, (min, max, min_xy)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
             if is_inside(pix, zone) {
               let signal_mw = mwts[zone.desired_point_id];
               let all_signals_mw = mwts.iter().sum::<f64>();
@@ -357,6 +387,7 @@ pub async fn do_image2(
 
               if sinr < *min {
                 *min = sinr;
+                *min_xy = pix;
               }
               if sinr > *max {
                 *max = sinr;
@@ -375,18 +406,42 @@ pub async fn do_image2(
     }));
   }
 
-  let mut global_sinr_min_max = vec![(f64::MAX, f64::MIN); regular_state.radio_zones.len()].into_boxed_slice();
+  let mut global_sinr_min_max = vec![(f64::MAX, f64::MIN, Pos { x: 0.0, y: 0.0 }); regular_state.radio_zones.len()].into_boxed_slice();
   for queued in queued {
     let smallest_sinr_per_zone = queued.await.unwrap();
-    for ((g_min, g_max), (l_min, l_max)) in global_sinr_min_max.iter_mut().zip(smallest_sinr_per_zone.into_iter()) {
-      *g_min = g_min.min(*l_min);
+    for ((g_min, g_max, g_pos), (l_min, l_max, l_pos)) in global_sinr_min_max.iter_mut().zip(smallest_sinr_per_zone.into_iter()) {
       *g_max = g_max.max(*l_max);
+      if l_min < g_min {
+        *g_min = *l_min;
+        *g_pos = *l_pos;
+      }
     }
   }
   let min_max_sinr_per_zone = Arc::<[_]>::from(global_sinr_min_max);
 
-  for ((min, max), zone) in min_max_sinr_per_zone.iter().zip(regular_state.radio_zones.iter()) {
+  let mut active_best = Vec::new();
+
+  for ((((min, max, pos), zone), pow), point_pos) in min_max_sinr_per_zone.iter()
+    .zip(regular_state.radio_zones.iter())
+    .zip(next_guess.points_signal_dbm.iter())
+    .zip(regular_state.radio_points.iter())
+  {
+    active_best.push(ActiveBestZone {
+      point_x: point_pos.pos.x,
+      point_y: point_pos.pos.y,
+      point_pow_mw: dbm_to_mw(*pow),
+      min_sinr_dbm: *min,
+      min_sinr_x: pos.x,
+      min_sinr_y: pos.y,
+      r: zone.r,
+      g: zone.g,
+      b: zone.b,
+    });
     println!("zone: r{} g{} b{} => SINR Min: {}, SINR Max: {}, powers: {:?}", zone.r, zone.g, zone.b, min, max, next_guess.points_signal_dbm.as_slice())
+  }
+
+  {
+    ACTIVE_BEST.lock().unwrap().zones = active_best;
   }
 
   let state_arc = Arc::new(RwLock::new(vec![0u8; bb.res.0*bb.res.1*3].into_boxed_slice()));
@@ -421,7 +476,7 @@ pub async fn do_image2(
           let iter = regular_state.radio_zones.iter()
             .zip(min_max_sinr_per_zone.iter())
             .zip(next_guess.points_signal_dbm.iter());
-          for ((zone, (min_sinr, max_sinr)), power_dbm) in iter {
+          for ((zone, (min_sinr, max_sinr, min_pos)), power_dbm) in iter {
             let zone_rgb = [zone.r, zone.g, zone.b];
             let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
             let signal = mws[zone.desired_point_id];
@@ -465,9 +520,7 @@ pub async fn do_image2(
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
 
-  paint_walls(&bb, &regular_state, state);
-
-  save_image(bb.res, state, "../rimg3.png");
+  save_image(bb.res, state, path);
 }
 
 // Находит силу сигнала от точки в определённом пикселе.
@@ -510,106 +563,9 @@ fn save_image<P: AsRef<Path>>(res: (usize, usize), scene: &mut [u8], path: P) {
   writer.finish().unwrap();
 }
 
-pub fn meter_to_pix(bb: &BoundingBoxes, p: Pos) -> Pos {
-  Pos::new(
-    (p.x as f64 - bb.min.x) * bb.res.0 as f64 / bb.wh.x,
-    (p.y as f64 - bb.min.y) * bb.res.1 as f64 / bb.wh.y,
-  )
-}
-
 pub fn pix_to_meter(bb: &BoundingBoxes, p: Px) -> Pos {
   Pos::new(
-    bb.min.x + p.x as f64 * bb.wh.x / bb.res.0 as f64,
-    bb.min.y + p.y as f64 * bb.wh.y / bb.res.1 as f64,
+    bb.min.x + p.x as f64 * bb.wh.x / bb.res.0 as f64 + (bb.wh.x / (2 * bb.res.0) as f64),
+    bb.min.y + p.y as f64 * bb.wh.y / bb.res.1 as f64 + (bb.wh.y / (2 * bb.res.1) as f64),
   )
-}
-
-fn paint_walls(bb: &BoundingBoxes, regular_state: &RoomState, scene: &mut [u8]) {
-  // Рисуем стены поверх изображения интенсивностей
-  for w in &regular_state.walls {
-    let a = meter_to_pix(bb, w.a);
-    let b = meter_to_pix(bb, w.b);
-    let ax = a.x as isize;
-    let ay = a.y as isize;
-    let bx = b.x as isize;
-    let by = b.y as isize;
-    // tline(&mut state.scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00, 4);
-    dline(bb.res.0, scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00);
-    // bline(&mut state.scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00);
-  }
-}
-
-fn dline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
-  bline(width, dest, Px::new(p0.x, p0.y), Px::new(p1.x, p1.y), r, g, b);
-  bline(width, dest, Px::new(p0.x, p0.y - 1), Px::new(p1.x, p1.y - 1), r, g, b);
-  bline(width, dest, Px::new(p0.x, p0.y + 1), Px::new(p1.x, p1.y + 1), r, g, b);
-  bline(width, dest, Px::new(p0.x - 1, p0.y), Px::new(p1.x - 1, p1.y), r, g ,b);
-  bline(width, dest, Px::new(p0.x + 1, p0.y), Px::new(p1.x + 1, p1.y), r, g ,b);
-}
-
-
-fn tline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8, thickness: u8) {
-  bline(width, dest, p0, p1, r, g, b);
-  let dy = (p1.y - p0.y).abs();
-  let dx = (p1.x - p0.x).abs();
-  let wz = (thickness - 1) as isize * ((dx * dx + dy * dy) as f64).sqrt() as isize;
-  if dx > dy {
-    let wy = wz / (2 * dx);
-    for i in 0..wy {
-      bline(width, dest, Px::new(p0.x, p0.y - i), Px::new(p1.x, p1.y - i), r, g, b);
-      bline(width, dest, Px::new(p0.x, p0.y + i), Px::new(p1.x, p1.y + i), r, g, b);
-    }
-  } else {
-    let wx = wz / (2 * dy);
-    for i in 0..wx {
-      bline(width, dest, Px::new(p0.x - i, p0.y), Px::new(p1.x - i, p1.y), r, g ,b);
-      bline(width, dest, Px::new(p0.x + i, p0.y), Px::new(p1.x + i, p1.y), r, g ,b);
-    }
-  }
-}
-#[inline(always)]
-fn put(width: usize, dest: &mut [u8], x: isize, y: isize, r: u8, g: u8, b: u8) {
-  let offset = (y as usize * width + x as usize) * 3;
-  unsafe {
-    *dest.get_unchecked_mut(offset  ) = r;
-    *dest.get_unchecked_mut(offset+1) = g;
-    *dest.get_unchecked_mut(offset+2) = b;
-  }
-  // dest[offset  ] = r;
-  // dest[offset+1] = g;
-  // dest[offset+2] = b;
-}
-fn bline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
-  let dx = (p1.x - p0.x).abs();
-  let dy = (p1.y - p0.y).abs();
-  let xinc = if p0.x < p1.x { 1 } else { -1 };
-  let yinc = if p0.y < p1.y { 1 } else { -1 };
-  let mut x = p0.x;
-  let mut y = p0.y;
-  put(width, dest, x, y, r, g, b);
-  if dx >= dy {
-    let mut e = (2 * dy) - dx;
-    while x != p1.x {
-      if e < 0 {
-        e += 2 * dy;
-      } else {
-        e += 2 * (dy - dx);
-        y += yinc;
-      }
-      x += xinc;
-      put(width, dest, x, y, r, g, b);
-    }
-  } else {
-    let mut e = (2 * dx) - dy;
-    while y != p1.y {
-      if e < 0 {
-        e += 2 * dx;
-      } else {
-        e += 2 * (dx - dy);
-        x += xinc;
-      }
-      y += yinc;
-      put(width, dest, x, y, r, g, b);
-    }
-  }
 }

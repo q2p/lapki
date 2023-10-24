@@ -1,12 +1,11 @@
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
-use crate::geometry::line_intersection;
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -15,16 +14,16 @@ pub struct RoomState2 {
 }
 
 struct ParamRanges {
-  /// dBm max
-  pub points_limits_dbm: Vec<f64>,
+  /// mw min, max
+  pub points_limits_mws: Vec<(f64, f64)>,
 }
 
-fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64, f64) {
+fn solve_slice(bb: &BoundingBoxes, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
   let mut signal_t = 0f64;
   let mut noise_t = 0f64;
   let mut min_sinr = f64::MAX;
 
-  for y in y_from..y_to {
+  for y in 0..bb.res.1 {
     for x in 0..bb.res.0 {
       let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
@@ -59,7 +58,7 @@ fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &Room
       noise_t += ni_mw;
     }
   }
-  return (signal_t, noise_t, min_sinr);
+  return (signal_t / noise_t, min_sinr);
 }
 
 #[derive(Debug)]
@@ -93,23 +92,20 @@ impl BoundingBoxes {
 pub async fn do_montecarlo() {
   let state = Arc::new(crate::room_state::get_config());
 
-  let limits = ParamRanges {
-    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
-  };
-
-  let mut rng = rand::rngs::StdRng::from_entropy();
+  let limits = Arc::new(ParamRanges {
+    points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
+  });
 
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
   let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
 
-  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
-  let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
+  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
+  let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
   // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
   // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
 
-  println!("measure {:?}", measure);
-  println!("render {:?}\n\n", render);
+  println!("measure {:?}\nrender {:?}\n\n", measure, render);
 
   {
     let state = state.clone();
@@ -127,59 +123,65 @@ pub async fn do_montecarlo() {
     });
   }
 
-  let mut max_sinr = f64::NEG_INFINITY;
+  let best_tx = Arc::new(best_tx);
 
-  let mut iterations = 0;
-  let mut next_check = 0;
-  let mut last_print = Instant::now();
+  let global_max_sinr = Arc::new(Mutex::new(f64::NEG_INFINITY));
 
-  let mut super_uper_min = f64::NEG_INFINITY;
+  for i in 0..threads {
+    let measure = Arc::clone(&measure);
+    let state = Arc::clone(&state);
+    let limits = Arc::clone(&limits);
+    let best_tx = Arc::clone(&best_tx);
+    let global_max_sinr = Arc::clone(&global_max_sinr);
+    tokio::spawn(async move {
+      let mut rng = rand::rngs::StdRng::from_entropy();
 
-  'monte_carlo: loop {
-    if iterations > next_check {
-      next_check += 100;
-      let now = Instant::now();
-      if now.duration_since(last_print).as_secs() > 0 {
-        last_print = last_print + Duration::from_secs(1);
-        println!("Iterations: {iterations}");
+      let mut iterations = 0;
+      let mut next_check = 0;
+      let mut last_print = Instant::now();
+
+      let mut local_max_sinr = f64::NEG_INFINITY;
+
+      let mut super_uper_min = f64::NEG_INFINITY;
+
+      'monte_carlo: loop {
+        if iterations & 0b11 == 0 {
+          if i == 0 && iterations > next_check {
+            next_check += 100;
+            let now = Instant::now();
+            if now.duration_since(last_print).as_secs() > 0 {
+              last_print = last_print + Duration::from_secs(1);
+              println!("Iterations: {}", iterations * threads);
+            }
+          }
+          tokio::task::yield_now().await;
+        }
+        iterations += 1;
+        let next_guess = RoomState2 {
+          points_signal_dbm: limits.points_limits_mws.iter().map(|(min, max)| mw_to_dbm(rng.gen_range(*min..=*max))).collect(),
+          // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| mw_to_dbm(190f64)).collect(),
+        };
+
+        let (sinr_avg, min_sinr_dbm) = solve_slice(&*measure, &next_guess, &state);
+        // if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
+        //   super_uper_min = min_sinr_dbm;
+        //   println!("min_sinr: {min_sinr_dbm}dbm");
+        // }
+        if !f64::is_finite(min_sinr_dbm) || min_sinr_dbm < -4.0 {
+          continue 'monte_carlo;
+        }
+        if f64::is_finite(sinr_avg) && sinr_avg > local_max_sinr {
+          local_max_sinr = sinr_avg;
+          let mut gms = global_max_sinr.lock().unwrap();
+          if local_max_sinr > *gms {
+            *gms = local_max_sinr;
+            drop(gms);
+            println!("min_sinr_sum: {}mw", sinr_avg);
+            best_tx.send(Some(Arc::new(next_guess))).unwrap();
+          }
+        }
       }
-    }
-    iterations += 1;
-    let next_guess = Arc::new(RoomState2 {
-      points_signal_dbm: limits.points_limits_dbm.iter().map(|max| rng.gen_range(0.0..=*max)).collect(),
-      // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| 200f64).collect(),
     });
-
-    // TODO: map size должен включать все стены.
-    let mut left_to_solve = Vec::new();
-    for (y_from, y_to, _) in chop_ys(measure.res.1, 1) {
-      let next_guess = next_guess.clone();
-      let state = state.clone();
-      let measure = measure.clone();
-      left_to_solve.push(tokio::spawn(async move {
-        solve_slice(&*measure, y_from, y_to, &*next_guess, &*state)
-      }));
-    }
-    let mut signal_mw = 0f64;
-    let mut noise_mw = 0f64;
-    for i in left_to_solve {
-      let (s, n, min_sinr_dbm) = i.await.unwrap();
-      signal_mw += s;
-      noise_mw += n;
-      if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
-        super_uper_min = min_sinr_dbm;
-        println!("min_sinr: {min_sinr_dbm}dbm");
-      }
-      if min_sinr_dbm < -5.0 {
-        continue 'monte_carlo;
-      }
-    }
-    let sinr_avg = signal_mw / noise_mw;
-    if sinr_avg > max_sinr {
-      max_sinr = sinr_avg;
-      println!("min_sinr_sum: {}mw", sinr_avg);
-      best_tx.send(Some(next_guess)).unwrap();
-    }
   }
 }
 

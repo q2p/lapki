@@ -1,7 +1,7 @@
 import { event } from "@tauri-apps/api";
 import { invoke } from "@tauri-apps/api/tauri";
-import { log } from "console";
-import e from "express";
+
+const style = (node, styles) => Object.keys(styles).forEach(key => node.style[key] = styles[key])
 
 type Config = {
   walls: Wall[];
@@ -22,6 +22,9 @@ type RadioPoint = {
 
 type RadioZone = {
   points: Point2d[];
+  r: number,
+  g: number,
+  b: number,
 }
 
 type Point2d = {
@@ -29,173 +32,65 @@ type Point2d = {
   y: number;
 }
 
+type ActiveBest = {
+  point_x: number;
+  point_y: number;
+  point_pow_mw: number;
+  min_sinr_dbm: number;
+  min_sinr_x: number;
+  min_sinr_y: number;
+  r: number;
+  g: number;
+  b: number;
+}
+
+class StoredBest {
+  constructor(
+    readonly x: number,
+    readonly y: number,
+    readonly tooltip: HTMLDivElement,
+    readonly circle: HTMLDivElement,
+  ) {}
+}
+
 async function get_config(): Promise<Config>{
   return await invoke("get_config") as Config
+}
+
+async function get_active_best(): Promise<ActiveBest[]>{
+  return await invoke("get_active_best") as ActiveBest[]
 }
 
 let config: Config = await get_config();
 
 console.log(config)
 
-// //50px = 1m
-// const WIDTH = 60;
-// const HEIGHT = 60;
-// const KEY_L = 76;
-// let key_l_clicked = 0;
-// const KEY_S = 83;
-// let key_s_clicked = 0;
-
-// const grid = [
-//   ['white', 'white'],
-//   ['white', 'white']
-// ];
-
-// function drawGrid() {
-//   // const startX = Math.floor((-stage.x() - stage.width()) / WIDTH) * WIDTH;
-//   // const endX = Math.floor((-stage.x() + stage.width() * 2) / WIDTH) * WIDTH;
-
-//   // const startY = Math.floor((-stage.y() - stage.height()) / HEIGHT) * HEIGHT;
-//   // const endY = Math.floor((-stage.y() + stage.height() * 2) / HEIGHT) * HEIGHT;
-//   let startX = 0;
-//   let endX = 2500;
-//   let startY = 0;
-//   let endY = 2500;
-
-//   for (var x = startX; x < endX; x += WIDTH) {
-//     for (var y = startY; y < endY; y += HEIGHT) {
-
-//       const indexX = ((x / WIDTH) + grid.length * WIDTH) % grid.length;
-//       const indexY = ((y / HEIGHT) + grid[0].length * HEIGHT) % grid[0].length;
-
-//       //maps from 0 to 3
-//       const i = indexX * 2 + indexY;
-
-//       layer.add(new Konva.Rect({
-//         x,
-//         y,
-//         width: WIDTH,
-//         height: HEIGHT,
-//         fill: grid[indexX][indexY],
-//         stroke: 'gray',
-//         strokeWidth: 0.5
-//       }));
-//     }
-//   }
-// }
-
-// function drawLines() {
-//   for (let i = 0; i < config.walls.length; i++) {
-//     let line = new Konva.Line({
-//       x: 0,
-//       y: 0,
-//       points: [config.walls[i].a.x, config.walls[i].a.y, config.walls[i].b.x, config.walls[i].b.y,],
-//       stroke: 'black',
-//       tension: 1
-//     });
-//     // line.on("click", () => {
-//     //   console.log("click");
-//     // });
-//     layer.add(line);
-//   }
-// }
-
-// let scaleBy = 1.05;
-// stage.on('wheel', (e) => {
-//   // stop default scrolling
-//   e.evt.preventDefault();
-
-//   var oldScale = stage.scaleX();
-//   var pointer = stage.getPointerPosition();
-
-//   var mousePointTo = {
-//     x: (pointer.x - stage.x()) / oldScale,
-//     y: (pointer.y - stage.y()) / oldScale,
-//   };
-
-//   // how to scale? Zoom in? Or zoom out?
-//   let direction = e.evt.deltaY > 0 ? 1 : -1;
-
-//   // when we zoom on trackpad, e.evt.ctrlKey is true
-//   // in that case lets revert direction
-//   if (e.evt.ctrlKey) {
-//     direction = -direction;
-//   }
-
-//   var newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
-
-//   stage.scale({ x: newScale, y: newScale });
-
-//   var newPos = {
-//     x: pointer.x - mousePointTo.x * newScale,
-//     y: pointer.y - mousePointTo.y * newScale,
-//   };
-//   stage.position(newPos);
-// });
-
-// // let container = stage.container();
-// // // make container focusable
-// // container.tabIndex = 1;
-// // let pos = null;
-// // let mem_pos = null;
-// // container.addEventListener('keydown', function (e) {
-// //   if (e.keyCode === KEY_L) {
-// //     if (key_l_clicked == 1) {
-// //       pos = stage.getRelativePointerPosition();
-// //       let line = new Konva.Line({
-// //         x: 0,
-// //         y: 0,
-// //         points: [mem_pos.x, mem_pos.y, pos.x, pos.y],
-// //         stroke: 'black',
-// //         tension: 1
-// //       });
-// //       layer.add(line);
-// //     }
-// //     mem_pos = stage.getRelativePointerPosition();
-// //     key_l_clicked = 1;
-// //   } else if (e.keyCode == KEY_S){
-// //     key_l_clicked == 0;
-// //     pos = mem_pos = null;
-// //   } else {
-// //     return;
-// //   }
-// //   e.preventDefault();
-// // })
-
-// stage.on('dragend', () => {
-//   layer.destroyChildren();
-//   drawGrid();
-//   drawLines();
-//   layer.draw();
-// })
-
-// stage.on('click', function () {
-//   var pos = stage.getRelativePointerPosition();
-//   console.log(pos)
-// });
-
-//////////////////////////
-//////////////////////////
-//////////////////////////
-
 // rimg meters
-const xmin = 5.2
-const ymin = 12.4
-const xmax = 59.6
-const ymax = 52.4
-const rimg_yc = (ymin + ymax)/2
-const rimg_xc = (xmin + xmax)/2
+const rimg_xmin = 5
+const rimg_ymin = 12
+const rimg_xmax = 60 - 0*55/600
+const rimg_ymax = 52 - 0*40/436
+const rimg_yc = (rimg_ymin + rimg_ymax)/2
+const rimg_xc = (rimg_xmin + rimg_xmax)/2
 
-let camX = 0;
-let camY = 0;
+let camX = rimg_xc;
+let camY = rimg_yc;
+
+let cursor_x_m = 0
+let cursor_y_m = 0
+let cursor_x_p = 0
+let cursor_y_p = 0
 
 const canvas = document.createElement("canvas")
 document.body.appendChild(canvas)
 const ctx = canvas.getContext("2d")!;
 
-let image_loaded = false
 const image = new Image();
-image.src = "../rimg3.png";
-image.onload = function () { image_loaded = true }
+setInterval(function() {
+  if (!image.complete) {
+    image.src = image.src
+  }
+}, 200)
 
 const wall_thickness = 8
 
@@ -209,28 +104,87 @@ window.addEventListener("wheel", function(e: WheelEvent) {
 })
 
 window.addEventListener("mousemove", function(e) {
+  cursor_x_p = e.clientX
+  cursor_y_p = e.clientY
   if (is_pressing) {
-    camX = (canvas.width /2 - e.clientX) / zoom + anchorX
-    camY = (canvas.height/2 - e.clientY) / zoom + anchorY
+    camX = anchor_x_m - (cursor_x_p - canvas.width  / 2) / zoom
+    camY = anchor_y_m - (cursor_y_p - canvas.height / 2) / zoom
   }
+  cursor_x_m = camX + (cursor_x_p - canvas.width  / 2) / zoom
+  cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
 })
 
-let anchorX = 0
-let anchorY = 0
+let anchor_x_m = 0
+let anchor_y_m = 0
 let is_pressing = false
 
 window.addEventListener("mousedown", function(e) {
+  cursor_x_p = e.clientX
+  cursor_y_p = e.clientY
+
   is_pressing = true
-  anchorX = camX + (e.clientX - canvas.width /2) / zoom
-  anchorY = camY + (e.clientY - canvas.height/2) / zoom
+  cursor_x_m = camX + (cursor_x_p - canvas.width  / 2) / zoom
+  cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
+  anchor_x_m = cursor_x_m
+  anchor_y_m = cursor_y_m
 })
 
 window.addEventListener("mouseup", function() {
   is_pressing = false
 })
 
-function grid(offsetX: number, offsetY: number, grid_size_px: number, color: string) {
-  ctx.strokeStyle = color;
+window.addEventListener("keydown", function(e) {
+  if (e.code === "KeyS") {
+    image.src = "../rimg3.png";
+    camX = rimg_xc
+    camY = rimg_yc
+    zoom_target = Math.max(
+      canvas.width /(rimg_xmax-rimg_xmin),
+      canvas.height/(rimg_ymax-rimg_ymin),
+    )
+    get_active_best().then(update_active_els);
+    zoom_pow = (Math.log(zoom_target / 32) / Math.log(1.5))
+  }
+})
+
+function mk_tooltip(x: number, y: number, color: string, text: string) {
+  const img = document.createElement('div');
+  img.className = "legend_point";
+  img.style.position = "absolute";
+  img.style.border = "2px solid black";
+  img.style.borderRadius = "100%";
+  img.style.width = `${img_wh}px`;
+  img.style.height = `${img_wh}px`;
+  img.style.backgroundColor = color;
+
+  let box = document.createElement('div');
+  box.className = "legend_tooltip";
+  box.textContent = text;
+  box.style.position = "absolute";
+  box.style.background = "rgba(33,33,33,0.7)";
+  box.style.color = "white";
+  box.style.borderRadius = "5px";
+
+  document.body.appendChild(box);
+  document.body.appendChild(img);
+
+  elements.push(new StoredBest(x, y, box, img));
+}
+
+function update_active_els(a: ActiveBest[]) {
+  for (const el of elements) {
+    el.circle.remove();
+    el.tooltip.remove();
+  }
+  for (const el of a) {
+    const color = ac(el.r, el.g, el.b);
+    mk_tooltip(el.point_x, el.point_y, color, `Pow: ${el.point_pow_mw.toPrecision(4)}mw`);
+    mk_tooltip(el.min_sinr_x, el.min_sinr_y, color, `Min SINR: ${el.min_sinr_dbm.toPrecision(4)}dbm`);
+  };
+}
+
+function grid(offsetX: number, offsetY: number, grid_size_px: number, alpha: number) {
+  ctx.strokeStyle = "#000";
   ctx.lineWidth = 1
   ctx.beginPath();
   for (let iy = -1; iy !== Math.floor(canvas.height / grid_size_px) + 2; iy++) {
@@ -243,87 +197,72 @@ function grid(offsetX: number, offsetY: number, grid_size_px: number, color: str
     ctx.moveTo(xpos, 0);
     ctx.lineTo(xpos, canvas.height);
   }
+  ctx.globalAlpha = alpha
   ctx.stroke();
+  ctx.globalAlpha = 1.0
 }
 
 function legend(offsetX: number, offsetY: number) {
   let i = 0
-  const dx = Math.round((xmin-offsetX)*zoom)
-  const dy = Math.round((ymin-offsetY)*zoom)
   for (const el of elements) {
-    let wh
-    let text_size_base = 15
-    if (zoom >= 128) {
-      wh = Math.round(img_wh*zoom/100)
-      text_size_base = Math.round(text_size_base*zoom/100)
-    } else {
-      wh = img_wh    
-    }
+    let wh, text_size_base
+    const past_zoom = Math.max(1, zoom / 100)
+    wh = img_wh * past_zoom
+    text_size_base = 15 * past_zoom
 
-    let xpos = (Math.round(el.x * zoom - wh / 2)) + dx
-    let ypos = (Math.round(el.y * zoom - wh / 2)) + dy
-    
-    points[i].style.left = `${Math.round(xpos)}px`
-    points[i].style.top = `${Math.round(ypos)}px`
-    points[i].style.width = `${wh}px`
-    points[i].style.height = `${wh}px`
+    const xpos = Math.round(zoom * (el.x - offsetX) - wh / 2)
+    const ypos = Math.round(zoom * (el.y - offsetY) - wh / 2)
 
-    tooltips[i].style.left = `${xpos + wh}px`
-    tooltips[i].style.top = `${ypos}px`
-    tooltips[i].style.fontSize = `${text_size_base}px`
+    el.circle.style.left = `${Math.round(xpos)}px`
+    el.circle.style.top = `${Math.round(ypos)}px`
+    el.circle.style.width = `${wh}px`
+    el.circle.style.height = `${wh}px`
+
+    el.tooltip.style.left = `${xpos}px`
+    el.tooltip.style.top = `${ypos + wh * 1.2}px`
+    el.tooltip.style.transform = "translateX(-50%)"
+    el.tooltip.style.fontFamily = `sans-serif`
+    el.tooltip.style.fontSize = `${text_size_base}px`
+    el.tooltip.style.paddingLeft = `${text_size_base*6/15}px`;
+    el.tooltip.style.paddingRight = `${text_size_base*6/15}px`;
+    el.tooltip.style.paddingTop = `${text_size_base*2/15}px`;
+    el.tooltip.style.paddingBottom = `${text_size_base*2/15}px`;
 
     i++
   }
 }
 
-const elements = [
-  {label: 'max red', x: 10, y: 5, color: "red"},
-  {label: 'min red', x: 5, y: 5, color: "red"},
-  {label: 'max blue', x: 12, y: 7, color: "blue"},
-  {label: 'min blue', x: 7, y: 7, color: "blue"},
-  {label: 'max green', x: 15, y: 10, color: "green"},
-  {label: 'min green', x: 10, y: 10, color: "green"},
-];
+function zc(i: number) {
+  const z = config.radio_zones[i]
+  return ac(z.r, z.g, z.b);
+}
+
+function ac(r: number, g: number, b: number) {
+  return "#" + (0x1000000 + r*256*256 + g*256 + b).toString(16).slice(-6)
+}
+
+let elements: StoredBest[] = [];
 
 // let img = document.getElementById('rimg');
-let img_wh = 8;
-
-for (const el of elements) {
-  const img = document.createElement('div');
-  img.className = "legend_point";
-  img.style.position = "absolute";
-  img.style.border = "2px solid black";
-  img.style.borderRadius = "100%";
-  img.style.width = img_wh.toString() + "px";
-  img.style.height = img_wh.toString() + "px";
-  img.style.backgroundColor = el.color;
-
-  let box = document.createElement('span');
-  box.className = "legend_tooltip";
-  box.textContent = el.label;
-  box.style.position = "absolute";
-  box.style.opacity = "0.7";
-  box.style.background = "#333";
-  box.style.color = "white";
-  box.style.borderRadius = "5px";
-  box.style.paddingLeft = "6px";
-  box.style.paddingRight = "6px";
-  box.style.paddingTop = "2px";
-  box.style.paddingBottom = "2px";
-
-  document.body.appendChild(box);
-  document.body.appendChild(img);
-};
-
-let points = document.getElementsByClassName("legend_point") as HTMLCollectionOf<HTMLDivElement>
-let tooltips = document.getElementsByClassName("legend_tooltip") as HTMLCollectionOf<HTMLSpanElement>
+const img_wh = 12;
 
 function raf() {
   requestAnimationFrame(raf)
 
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
   // const t = new Date().getTime()
 
   zoom = zoom_target * 0.1 + zoom * 0.9
+  if (Math.abs(zoom - zoom_target) < 0.001) {
+    zoom = zoom_target
+  }
+
+  if (is_pressing) {
+    camX = anchor_x_m - (cursor_x_p - canvas.width  / 2) / zoom
+    camY = anchor_y_m - (cursor_y_p - canvas.height / 2) / zoom
+  }
 
   // let camX = rimg_xc+16*Math.sin(t*0.0001);
   // let camY = rimg_yc+16*Math.cos(t*0.0001);
@@ -335,19 +274,11 @@ function raf() {
   ctx.fillStyle = "#fff"
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
-  if (zoom >= 128) {
-    grid(offsetX, offsetY, zoom/10, "#999")
-  }
-  if (zoom >= 8) {
-    grid(offsetX, offsetY, zoom, "#000")
-  }
-
-  ctx.globalAlpha = 0.5;
-  if (image_loaded) {
-    const dx = Math.round((xmin-offsetX)*zoom)
-    const dy = Math.round((ymin-offsetY)*zoom)
-    const rx = Math.round((xmax-xmin)*zoom)
-    const ry = Math.round((ymax-ymin)*zoom)
+  if (image.complete) {
+    const dx = Math.round((rimg_xmin-offsetX)*zoom)
+    const dy = Math.round((rimg_ymin-offsetY)*zoom)
+    const rx = Math.round((rimg_xmax-rimg_xmin)*zoom)
+    const ry = Math.round((rimg_ymax-rimg_ymin)*zoom)
     ctx.drawImage(image, dx, dy, rx, ry)
     ctx.fillRect(0, 0, dx, canvas.height)
     ctx.fillRect(dx+rx, 0, canvas.width, canvas.height)
@@ -356,7 +287,13 @@ function raf() {
   } else {
     ctx.fillRect(0, 0, canvas.width, canvas.height)
   }
-  ctx.globalAlpha = 1;
+
+  if (zoom >= 128) {
+    grid(offsetX, offsetY, zoom/10, 0.5)
+  }
+  if (zoom >= 8) {
+    grid(offsetX, offsetY, zoom, 0.7)
+  }
 
   //////////////////////////////
 
@@ -401,17 +338,19 @@ function raf() {
   ctx.fillStyle = "#000"
   ctx.beginPath();
   for (const w of config.walls) {
-    w.a.x = Math.round(w.a.x)
-    w.a.y = Math.round(w.a.y)
-    w.b.x = Math.round(w.b.x)
-    w.b.y = Math.round(w.b.y)
     const xmin = Math.round((Math.min(w.a.x, w.b.x)-offsetX)*zoom)
     const xmax = Math.round((Math.max(w.a.x, w.b.x)-offsetX)*zoom)
     const ymin = Math.round((Math.min(w.a.y, w.b.y)-offsetY)*zoom)
     const ymax = Math.round((Math.max(w.a.y, w.b.y)-offsetY)*zoom)
     ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
-    ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
-    ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
+
+    // Раскомментить для угловатых стен.
+    // w.a.x = Math.round(w.a.x)
+    // w.a.y = Math.round(w.a.y)
+    // w.b.x = Math.round(w.b.x)
+    // w.b.y = Math.round(w.b.y)
+    // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
+    // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
   }
   ctx.stroke();
 
@@ -443,39 +382,113 @@ function resize() {
   canvas.height = window.innerHeight;
 }
 
+const tools = document.createElement('div')
+style(tools, {
+  position: "absolute",
+  top: "10px",
+  left: "10px",
+  backgroundColor: "white",
+  padding: "10px",
+  border: "2px solid black",
+  fontSize: "18px"
+})
+tools.innerText = "Tools"
+tools.addEventListener('click', (e) => {
+})
+document.body.appendChild(tools)
+
+function draw_wall() {
+
+}
+
+function raf2() {
+  requestAnimationFrame(raf2)
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  // const t = new Date().getTime()
+
+  zoom = zoom_target * 0.1 + zoom * 0.9
+  if (Math.abs(zoom - zoom_target) < 0.001) {
+    zoom = zoom_target
+  }
+
+  // let camX = rimg_xc+16*Math.sin(t*0.0001);
+  // let camY = rimg_yc+16*Math.cos(t*0.0001);
+  // let zoom = 24+8*Math.cos(1253.0+t*0.0001);
+  // zoom = 32
+  let offsetX = camX - canvas.width / (2*zoom);
+  let offsetY = camY - canvas.height / (2*zoom);
+
+  ctx.fillStyle = "#fff"
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+
+  if (zoom >= 128) {
+    grid(offsetX, offsetY, zoom/10, 0.5)
+  }
+  if (zoom >= 8) {
+    grid(offsetX, offsetY, zoom, 0.7)
+  }
+
+  // ctx.lineWidth = wall_thickness
+  // ctx.strokeStyle = "#000";
+  // ctx.fillStyle = "#000"
+  // ctx.beginPath();
+  // for (const w of config.walls) {
+  //   const xmin = Math.round((Math.min(w.a.x, w.b.x)-offsetX)*zoom)
+  //   const xmax = Math.round((Math.max(w.a.x, w.b.x)-offsetX)*zoom)
+  //   const ymin = Math.round((Math.min(w.a.y, w.b.y)-offsetY)*zoom)
+  //   const ymax = Math.round((Math.max(w.a.y, w.b.y)-offsetY)*zoom)
+    // ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
+
+  //   // Раскомментить для угловатых стен.
+  //   // w.a.x = Math.round(w.a.x)
+  //   // w.a.y = Math.round(w.a.y)
+  //   // w.b.x = Math.round(w.b.x)
+  //   // w.b.y = Math.round(w.b.y)
+  //   // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
+  //   // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
+  // }
+  // ctx.stroke();
+
+
+
+  ctx.lineWidth = wall_thickness;
+  ctx.strokeStyle = "#000";
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  const xmin = (0 - offsetX)*zoom
+  const xmax = (10 - offsetX)*zoom
+  const ymin = (0 - offsetY)*zoom
+  const ymax = (0.001 - offsetY)*zoom
+  ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
+  ctx.stroke();
+
+  const scales = [1, 2, 5]
+  for (let i = -10; i !== 32; i++) {
+    const decs = Math.floor(i / 3)
+    const scale = scales[((i % 3) + 3) % 3]
+    const meters = Math.pow(10, decs) * scale
+    if (meters * zoom > 64) {
+      ctx.lineWidth = 1
+      ctx.strokeStyle = "#000";
+      ctx.fillStyle = "#000"
+
+      ctx.font = "bold 22px sans-serif"
+      const width = Math.round(meters * zoom)
+      ctx.textAlign = "center"
+      ctx.fillText(`${meters}m`, 32 + width/2, canvas.height-50)
+      ctx.fillRect(32, canvas.height-34, width, 2)
+      ctx.fillRect(32      , canvas.height-37, 2, 8)
+      ctx.fillRect(32+width, canvas.height-37, 2, 8)
+      break
+    }
+  }
+}
+
 window.addEventListener("resize", resize)
 document.addEventListener("resize", resize)
 resize()
-requestAnimationFrame(raf)
-
-function push_aside2() {
-  let spans = document.querySelectorAll('span');
-  let prev: HTMLSpanElement | null = null;
-  let prev_rect: DOMRect | null = null;
-
-    spans.forEach(function(el) {
-      if (prev === null && prev_rect === null) {
-        prev = el;
-        prev_rect = el.getBoundingClientRect();
-        return;
-      }
-
-      let rect = el.getBoundingClientRect();
-      if(rect.bottom > prev_rect.top
-        && rect.right > prev_rect.left
-        && rect.top < prev_rect.bottom
-        && rect.left < prev_rect.right) {
-          let dy = Math.abs(rect.top - prev_rect.bottom);
-          let dx = Math.abs(rect.left - prev_rect.right);
-          prev.style.top = (prev.offsetTop - dy).toString() + "px";
-
-          el.style.top = (el.offsetTop + img_wh).toString() + "px";
-          el.style.left = (el.offsetLeft - el.clientWidth - img_wh).toString() + "px";
-          prev.style.margin = "3px";
-          el.style.margin = "3px";
-          // prev.style.left = (prev.offsetLeft + (dx / 2)).toString() + "px";
-        }
-      prev = el;
-      prev_rect = el.getBoundingClientRect();
-    });
-  }
+// requestAnimationFrame(raf)
+requestAnimationFrame(raf2)
