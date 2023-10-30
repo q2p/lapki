@@ -167,9 +167,9 @@ pub async fn do_montecarlo() {
         //   super_uper_min = min_sinr_dbm;
         //   println!("min_sinr: {min_sinr_dbm}dbm");
         // }
-        if !f64::is_finite(min_sinr_dbm) || min_sinr_dbm < -4.0 {
-          continue 'monte_carlo;
-        }
+        // if !f64::is_finite(min_sinr_dbm) || min_sinr_dbm < -4.0 {
+        //   continue 'monte_carlo;
+        // }
         if f64::is_finite(sinr_avg) && sinr_avg > local_max_sinr {
           local_max_sinr = sinr_avg;
           let mut gms = global_max_sinr.lock().unwrap();
