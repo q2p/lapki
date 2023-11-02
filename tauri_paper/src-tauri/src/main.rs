@@ -16,7 +16,7 @@ fn main() {
     //     .expect("failed to emit event");
     // })
     .setup(|app| {
-      tauri::async_runtime::spawn(async move { random_tries::do_montecarlo().await });
+      // tauri::async_runtime::spawn(async move { random_tries::do_montecarlo().await });
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![room_state::get_config, heatmap::get_active_best])
