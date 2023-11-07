@@ -90,7 +90,8 @@ impl BoundingBoxes {
 }
 
 pub async fn do_montecarlo() {
-  let state = Arc::new(crate::room_state::get_config());
+  // let state = Arc::new(crate::room_state::get_config());
+  let state = Arc::new(crate::room_state::get_config2());
 
   let limits = Arc::new(ParamRanges {
     points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),

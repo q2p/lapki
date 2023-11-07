@@ -1,4 +1,9 @@
+import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/tauri";
+import { open, save as save_dialog } from '@tauri-apps/api/dialog';
+import { WebviewWindow } from '@tauri-apps/api/window';
+import { appWindow } from '@tauri-apps/api/window';
+import { dialog } from "@tauri-apps/api";
 
 const style = (node, styles) =>
   Object.keys(styles).forEach((key) => (node.style[key] = styles[key]));
@@ -50,20 +55,20 @@ class StoredBest {
     readonly y: number,
     readonly tooltip: HTMLDivElement,
     readonly circle: HTMLDivElement
-  ) {}
+  ) { }
 }
 
-async function get_config(): Promise<Config> {
-  return (await invoke("get_config")) as Config;
+async function get_config(path: string): Promise<Config> {
+  return (await invoke("get_config", { path: path })) as Config;
 }
 
 async function get_active_best(): Promise<ActiveBest[]> {
   return (await invoke("get_active_best")) as ActiveBest[];
 }
 
-let config: Config = await get_config();
-
-console.log(config);
+// let config: Config = await get_config();
+let config: Config
+let config_path: string
 
 // rimg meters
 const rimg_xmin = 5;
@@ -455,16 +460,20 @@ function resize() {
   canvas.height = window.innerHeight;
 }
 
-const tools = document.createElement("div");
-style(tools, {
+const unlisten = await listen('notification', (event) => {
+  alert(event.payload.message)
+})
+
+const container = document.createElement("div")
+style(container, {
   position: "absolute",
   top: "10px",
   left: "10px",
-  backgroundColor: "white",
-  padding: "10px",
-  border: "2px solid black",
-  fontSize: "18px",
-});
+  display: "flex",
+  gap: "10px"
+})
+const tools = document.createElement("div");
+tools.classList.add("menu-item")
 tools.innerText = "Tools";
 tools.addEventListener("click", (e) => {
   if (drawing) {
@@ -473,6 +482,61 @@ tools.addEventListener("click", (e) => {
     drawing = true;
   }
 });
+const load = document.createElement("div")
+load.classList.add("menu-item")
+load.innerText = "Load"
+load.addEventListener("click", async (e) => {
+  const selected = await open({
+    multiple: false,
+    filters: [{
+      name: 'Config',
+      extensions: ['json']
+    }]
+  });
+  config_path = selected
+  config = await get_config(config_path)
+  await appWindow.setTitle("5G Planner " + selected)
+})
+const save = document.createElement("div")
+save.classList.add("menu-item")
+save.innerText = "Save";
+save.addEventListener("click", async (e) => {
+  if (config_path) {
+    config.walls = [...config.walls, ...added_walls]
+    invoke('save_config', { config: config, path: config_path })
+  } else {
+    //fix me
+    config = <Config> {
+      walls: added_walls,
+      radio_points: [],
+      radio_zones: []
+    }
+    const filePath = await save_dialog({
+      filters: [{
+        name: 'Config',
+        extensions: ['json']
+      }]
+    });
+    invoke('save_config', { config: config, path: filePath })
+  }
+});
+const run = document.createElement("div")
+run.classList.add("menu-item")
+run.innerText = "Run";
+run.addEventListener("click", async (e) => {
+  emit('run')
+});
+const stop = document.createElement("div")
+stop.classList.add("menu-item")
+stop.innerText = "Stop";
+stop.addEventListener("click", (e) => {
+  emit('stop')
+});
+container.appendChild(tools)
+container.appendChild(load)
+container.appendChild(save)
+container.appendChild(run)
+container.appendChild(stop)
 // canvas.addEventListener('mousemove', (e) => {
 //   if (drawing) {
 //     console.log(e.offsetX - , e.offsetY)
@@ -489,9 +553,7 @@ tools.addEventListener("click", (e) => {
 //     prev = coord;
 //   }
 // })
-document.body.appendChild(tools);
-
-function draw_wall() {}
+document.body.appendChild(container);
 
 export function raf2() {
   requestAnimationFrame(raf2);
@@ -523,26 +585,28 @@ export function raf2() {
     grid(offsetX, offsetY, zoom, 0.7);
   }
 
-  // ctx.lineWidth = wall_thickness
-  // ctx.strokeStyle = "#000";
-  // ctx.fillStyle = "#000"
-  // ctx.beginPath();
-  // for (const w of config.walls) {
-  //   const xmin = Math.round((Math.min(w.a.x, w.b.x)-offsetX)*zoom)
-  //   const xmax = Math.round((Math.max(w.a.x, w.b.x)-offsetX)*zoom)
-  //   const ymin = Math.round((Math.min(w.a.y, w.b.y)-offsetY)*zoom)
-  //   const ymax = Math.round((Math.max(w.a.y, w.b.y)-offsetY)*zoom)
-  // ctx.fillRect(xmin - wall_thickness/2, ymin - wall_thickness/2, xmax-xmin + wall_thickness, ymax-ymin + wall_thickness)
+  if (config !== undefined) {
+    ctx.lineWidth = wall_thickness
+    ctx.strokeStyle = "#000";
+    ctx.fillStyle = "#000"
+    ctx.beginPath();
+    for (const w of config.walls) {
+      const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
+      const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
+      const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
+      const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
+      ctx.fillRect(xmin - wall_thickness / 2, ymin - wall_thickness / 2, xmax - xmin + wall_thickness, ymax - ymin + wall_thickness)
 
-  //   // Раскомментить для угловатых стен.
-  //   // w.a.x = Math.round(w.a.x)
-  //   // w.a.y = Math.round(w.a.y)
-  //   // w.b.x = Math.round(w.b.x)
-  //   // w.b.y = Math.round(w.b.y)
-  //   // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
-  //   // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
-  // }
-  // ctx.stroke();
+      // Раскомментить для угловатых стен.
+      // w.a.x = Math.round(w.a.x)
+      // w.a.y = Math.round(w.a.y)
+      // w.b.x = Math.round(w.b.x)
+      // w.b.y = Math.round(w.b.y)
+      // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
+      // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
+    }
+    ctx.stroke();
+  }
 
   if (added_walls.length > 0) {
     ctx.lineWidth = wall_thickness;

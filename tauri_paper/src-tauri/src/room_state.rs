@@ -94,20 +94,32 @@ static STATE: Mutex<RoomState> = Mutex::new(RoomState {
   radio_zones: Vec::new(),
 });
 
-pub fn write_config(config: RoomState) {
+pub fn write_config(config: RoomState, path: &str) {
   let json = serde_json::to_string(&config).unwrap();
   {
     *STATE.lock().unwrap() = config;
   }
-  std::fs::write("map.json", json).unwrap();
+  // std::fs::write("map.json", json).unwrap();
+  std::fs::write(path, json).unwrap();
 }
 
-pub fn load_config() {
-  let file = std::fs::read_to_string("map.json").unwrap();
+pub fn load_config(path: &str) {
+  // let file = std::fs::read_to_string("map.json").unwrap();
+  let file = std::fs::read_to_string(path).unwrap();
   *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
 }
 
-#[tauri::command]
-pub fn get_config() -> RoomState {
+pub fn get_config2() -> RoomState {
   STATE.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn get_config(path: &str) -> RoomState {
+  load_config(path);
+  STATE.lock().unwrap().clone()
+}
+
+#[tauri::command]
+pub fn save_config(config: RoomState, path: &str) {
+  write_config(config, path)
 }
