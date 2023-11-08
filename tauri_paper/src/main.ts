@@ -10,6 +10,10 @@ import { exit } from "@tauri-apps/api/process";
 const style = (node, styles) =>
   Object.keys(styles).forEach((key) => (node.style[key] = styles[key]));
 
+type AppConfig = {
+  latest_config?: string
+}
+
 type Config = {
   walls: Wall[];
   radio_points: RadioPoint[];
@@ -64,14 +68,29 @@ async function get_config(path: string): Promise<Config> {
   return (await invoke("get_config", { path: path })) as Config;
 }
 
+async function get_app_config(): Promise<AppConfig> {
+  return (await invoke("get_app_config")) as AppConfig
+}
+
+async function write_app_config(app_config: AppConfig) {
+  await invoke("write_app_config", {appConfig: app_config})
+}
+
 async function get_active_best(): Promise<ActiveBest[]> {
   return (await invoke("get_active_best")) as ActiveBest[];
 }
 
 // let config: Config = await get_config();
+let app_config: AppConfig = await get_app_config()
 let config: Config
 let config_path: string
 let changes: boolean = false
+
+if (app_config.latest_config) {
+  config_path = app_config.latest_config
+  config = await get_config(config_path)
+  appWindow.setTitle("5G Planner " + config_path)
+}
 
 // rimg meters
 const rimg_xmin = 5;
@@ -484,6 +503,8 @@ appWindow.listen(TauriEvent.WINDOW_CLOSE_REQUESTED, async () => {
         config.walls = [...config.walls, ...added_walls]
         await invoke('save_config', { config: config, path: config_path })
       }
+      app_config.latest_config = config_path;
+      await write_app_config(app_config)
     } else {
       let result = await dialog.confirm("There are unsaved changes to Untitled", { title: 'Do you want to save your work', type: "warning" })
       if (!result) {
@@ -505,9 +526,18 @@ appWindow.listen(TauriEvent.WINDOW_CLOSE_REQUESTED, async () => {
           return;
         }
         await invoke('save_config', { config: config, path: filePath })
+        app_config.latest_config = filePath;
+        await write_app_config(app_config)
       }
     }
+  } else {
+    if (config_path) {
+      app_config.latest_config = config_path;
+      console.log(app_config)
+      await write_app_config(app_config)
+    }
   }
+
   await exit(1);
 })
 
