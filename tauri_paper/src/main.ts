@@ -4,6 +4,8 @@ import { open, save as save_dialog } from '@tauri-apps/api/dialog';
 import { WebviewWindow } from '@tauri-apps/api/window';
 import { appWindow } from '@tauri-apps/api/window';
 import { dialog } from "@tauri-apps/api";
+import { TauriEvent } from "@tauri-apps/api/event"
+import { exit } from "@tauri-apps/api/process";
 
 const style = (node, styles) =>
   Object.keys(styles).forEach((key) => (node.style[key] = styles[key]));
@@ -69,6 +71,7 @@ async function get_active_best(): Promise<ActiveBest[]> {
 // let config: Config = await get_config();
 let config: Config
 let config_path: string
+let changes: boolean = false
 
 // rimg meters
 const rimg_xmin = 5;
@@ -181,6 +184,12 @@ window.addEventListener("mouseup", function (e) {
         damping: 500, //change me
       };
       added_walls.push(wall);
+      changes = true;
+      if (config_path) {
+        appWindow.setTitle("5G Planner " + config_path + " *")
+      } else {
+        appWindow.setTitle("5G Planner " + "*")
+      }
     }
   } else {
     is_pressing = false;
@@ -461,7 +470,45 @@ function resize() {
 }
 
 const unlisten = await listen('notification', (event) => {
-  alert(event.payload.message)
+  dialog.message(event.payload.message, { type: "info" })
+})
+
+appWindow.listen(TauriEvent.WINDOW_CLOSE_REQUESTED, async () => {
+  console.log("close req")
+  if (changes) {
+    if (config_path) {
+      let result = await dialog.confirm("There are unsaved changes to " + config_path.split("/").pop(), { title: 'Do you want to save your work', type: "warning" })
+      if (!result) {
+        return;
+      } else {
+        config.walls = [...config.walls, ...added_walls]
+        await invoke('save_config', { config: config, path: config_path })
+      }
+    } else {
+      let result = await dialog.confirm("There are unsaved changes to Untitled", { title: 'Do you want to save your work', type: "warning" })
+      if (!result) {
+        return;
+      } else {
+        config = <Config>{
+          walls: added_walls,
+          radio_points: [],
+          radio_zones: []
+        }
+        const filePath = await save_dialog({
+          filters: [{
+            name: 'Config',
+            extensions: ['json']
+          }],
+          title: 'Choice file to save your work to'
+        });
+        if (!filePath) {
+          return;
+        }
+        await invoke('save_config', { config: config, path: filePath })
+      }
+    }
+  }
+  await exit(1);
 })
 
 const container = document.createElement("div")
@@ -503,10 +550,9 @@ save.innerText = "Save";
 save.addEventListener("click", async (e) => {
   if (config_path) {
     config.walls = [...config.walls, ...added_walls]
-    invoke('save_config', { config: config, path: config_path })
   } else {
     //fix me
-    config = <Config> {
+    config = <Config>{
       walls: added_walls,
       radio_points: [],
       radio_zones: []
@@ -517,8 +563,11 @@ save.addEventListener("click", async (e) => {
         extensions: ['json']
       }]
     });
-    invoke('save_config', { config: config, path: filePath })
+    config_path = filePath
   }
+  changes = false
+  invoke('save_config', { config: config, path: config_path })
+  appWindow.setTitle("5G Planner " + config_path)
 });
 const run = document.createElement("div")
 run.classList.add("menu-item")
