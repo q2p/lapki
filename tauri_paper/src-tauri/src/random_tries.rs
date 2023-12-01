@@ -5,12 +5,8 @@ use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
-<<<<<<< HEAD
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
-=======
 use crate::geometry::line_intersection;
 use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
->>>>>>> temp
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -98,11 +94,6 @@ impl BoundingBoxes {
 pub async fn do_montecarlo() {
   let state = Arc::new(crate::room_state::get_config());
 
-<<<<<<< HEAD
-  let limits = Arc::new(ParamRanges {
-    points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
-  });
-=======
   let limits = ParamRanges {
     points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
   };
@@ -110,17 +101,12 @@ pub async fn do_montecarlo() {
   println!("{:?}", limits);
 
   let mut rng = rand::rngs::StdRng::from_entropy();
->>>>>>> temp
 
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
   let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
 
-<<<<<<< HEAD
-  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
-=======
   let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
->>>>>>> temp
   let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
   // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
   // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
@@ -202,8 +188,6 @@ pub async fn do_montecarlo() {
         }
       }
     });
-<<<<<<< HEAD
-=======
 
     // TODO: map size должен включать все стены.
     let mut left_to_solve = Vec::new();
@@ -235,7 +219,6 @@ pub async fn do_montecarlo() {
       println!("min_sinr_sum: {}mw", sinr_avg);
       best_tx.send(Some(next_guess)).unwrap();
     }
->>>>>>> temp
   }
 }
 

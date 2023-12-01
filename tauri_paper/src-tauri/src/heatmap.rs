@@ -3,16 +3,11 @@ use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
-<<<<<<< HEAD
 use std::sync::{RwLock, Arc, Mutex};
-
 use serde::Serialize;
-=======
-use std::sync::{RwLock, Arc};
 use std::time::Duration;
 
 use rand::Rng;
->>>>>>> temp
 
 use crate::geometry::line_intersection;
 use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
@@ -21,12 +16,8 @@ use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint, Range, RANGE}
 /// 5 GHz
 const CARRYING_FREQ: f64 = 5f64;
 
-<<<<<<< HEAD
-pub const STATIC_NOISE_DBM:f64 = -140.0;
-=======
 //pub const STATIC_NOISE_DBM:f64 = 0.2;
 pub const STATIC_NOISE_DBM:f64 = -110.0;
->>>>>>> temp
 
 // Для закраски используем таблицу переходов между цветами.
 //  хранит точку, где цвет наиболее интенсивный.
@@ -44,7 +35,6 @@ struct State {
 
 // Вызывается по таймеру и перерисовывает картинку
 pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
-<<<<<<< HEAD
   // let mut rng = StdRng::from_entropy();
   // let shit_room = Arc::new(RoomState2 {
   //   points_signal_dbm: vec![mw_to_dbm(10.0), mw_to_dbm(45.0), mw_to_dbm(15.0)],
@@ -53,17 +43,10 @@ pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, n
   // next_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
   // next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
   do_image2(bb.clone(), regular_state.clone(), next_guess.clone(), "../rimg3.png").await;
-  // do_image2(bb.clone(), regular_state.clone(), shit_room.clone(), "../rimg4.png").await;
-=======
-  // next_image1(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  // next_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  // next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  do_image2(bb.clone(), regular_state.clone(), next_guess.clone(), "../rimg3.png").await;
   // let shitroom = RoomState2 {
   //   points_signal_dbm: vec![50.0, 1000.0, 1.0],
   // };
   // do_image2(bb.clone(), regular_state.clone(), Arc::new(shitroom), "../rimg4.png").await;
->>>>>>> temp
 }
 
 pub fn length(a: Pos, b: Pos) -> f64 {
@@ -343,7 +326,6 @@ F: Fn(Pos) -> (u8, u8, u8) + Send + Sync + 'static,
   save_image(bb.res, state, png_path);
 }
 
-<<<<<<< HEAD
 #[derive(Clone, Serialize)]
 pub struct ActiveBestZone {
   point_x: f64,
@@ -366,7 +348,8 @@ static ACTIVE_BEST: Mutex<ActiveBest> = Mutex::new(ActiveBest { zones: Vec::new(
 #[tauri::command]
 pub fn get_active_best() -> Vec<ActiveBestZone> {
   ACTIVE_BEST.lock().unwrap().zones.clone()
-=======
+}
+
 fn sum_dBm(dbm1: f64, dbm2: f64) -> f64 {
   if dbm1 < dbm2 {
     return dbm1 + 10.0 * f64::log10(1.0 + f64::powf(10.0, (dbm2 - dbm1) / 10.0));
@@ -425,7 +408,6 @@ fn do_calc_sinr_dbm(
   // let sinr = mw_to_dbm(signal / (interference + dbm_to_mw(STATIC_NOISE_DBM)));
 
   return sinr;
->>>>>>> temp
 }
 
 // Вызывается по таймеру и перерисовывает картинку
@@ -433,11 +415,7 @@ pub async fn do_image2(
   bb: Arc<BoundingBoxes>,
   regular_state: Arc<RoomState>,
   next_guess: Arc<RoomState2>,
-<<<<<<< HEAD
-  path: &str,
-=======
   rimg_path: &str,
->>>>>>> temp
 ) {
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
@@ -459,22 +437,9 @@ pub async fn do_image2(
           // Рассматриваем каждую точку доступа
           let dbms = calc_powers_dbm(&regular_state, &next_guess, pix);
 
-<<<<<<< HEAD
-          for (zone, (min, max, min_xy)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
-            if is_inside(pix, zone) {
-              let signal_mw = mwts[zone.desired_point_id];
-              let all_signals_mw = mwts.iter().sum::<f64>();
-              let interference_mw = all_signals_mw - signal_mw;
-              // signal - all signals = (s)/(s+i+n)
-              // max limit: 400mw на точке доступа
-              // min limit: -5db в худшей точке зоны.
-              let int_noise = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
-              let sinr = mw_to_dbm(signal_mw / int_noise);
-=======
           for (zone, (min, max)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
             //if is_inside(pix, zone) {
               let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
->>>>>>> temp
 
               if sinr < *min {
                 *min = sinr;
@@ -604,9 +569,6 @@ pub async fn do_image2(
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
 
-<<<<<<< HEAD
-  save_image(bb.res, state, path);
-=======
   save_image(bb.res, state, rimg_path);
 }
 
@@ -617,7 +579,6 @@ fn calc_powers_dbm(regular_state: &RoomState, next_guess: &RoomState2, pix: Pos)
     .map(|(point, power_dbm)| dbm_after_walls(regular_state, pix, point, *power_dbm))
     .collect::<Vec<_>>()
     .into_boxed_slice()
->>>>>>> temp
 }
 
 // Находит силу сигнала от точки в определённом пикселе.
@@ -681,8 +642,6 @@ pub fn pix_to_meter(bb: &BoundingBoxes, p: Px) -> Pos {
     bb.min.y + p.y as f64 * bb.wh.y / bb.res.1 as f64 + (bb.wh.y / (2 * bb.res.1) as f64),
   )
 }
-<<<<<<< HEAD
-=======
 
 fn paint_walls(bb: &BoundingBoxes, regular_state: &RoomState, scene: &mut [u8]) {
   // Рисуем стены поверх изображения интенсивностей
@@ -773,4 +732,3 @@ fn bline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
     }
   }
 }
->>>>>>> temp
