@@ -32,6 +32,9 @@ type Point2d = {
   y: number;
 }
 
+async function send_cmd(message: string): Promise<void> {
+  invoke("cmd_do", { message })
+}
 async function get_config(): Promise<Config>{
   return await invoke("get_config") as Config
 }
@@ -241,10 +244,13 @@ window.addEventListener("mouseup", function() {
 
 let active_set = 0
 window.addEventListener("keydown", function(e) {
+  if (e.code === "KeyU") {
+    send_cmd(prompt("enter cmd"))
+  }
   if (e.code === "KeyS") {
     active_set = 1 - active_set
     elements = all_els[active_set]
-    image.src = active_set === 0 ? "../rimg3.png" : "../rimg4.png";
+    // image.src = active_set === 0 ? "../rimg3.png" : "../rimg4.png";
     camX = rimg_xc
     camY = rimg_yc
     zoom_target = Math.min(
@@ -306,6 +312,10 @@ function legend(offsetX: number, offsetY: number) {
 
 function zc(i: number) {
   const z = config.radio_zones[i]
+  return to_rgb(z)
+}
+
+function to_rgb(z: RadioZone) {
   return "#" + (0x1000000 + z.r*256*256 + z.g*256 + z.b).toString(16).slice(-6)
 }
 
@@ -325,6 +335,9 @@ const all_els = [[
   {label: 'Min Green', x: 36.1, y: 22.1, color: zc(1)},
   {label: 'Min Blue',  x: 41.9, y: 21.9,  color: zc(2)},
 ]];
+
+all_els[0] = []
+all_els[1] = []
 
 let elements = all_els[0]
 
@@ -355,6 +368,11 @@ for (const el of elements) {
 
 let points = document.getElementsByClassName("legend_point") as HTMLCollectionOf<HTMLDivElement>
 let tooltips = document.getElementsByClassName("legend_tooltip") as HTMLCollectionOf<HTMLSpanElement>
+
+function normalize(p: Point2d) {
+  const len = Math.sqrt(p.x * p.x + p.y * p.y)
+  return <Point2d> { x: p.x / len, y: p.y / len }
+}
 
 function raf() {
   requestAnimationFrame(raf)
@@ -434,6 +452,44 @@ function raf() {
   // }
 
   /////////////////////////////////////////
+
+  for (const zone of config.radio_zones.reverse()) {
+    const path = [];
+    for (const p of zone.points) {
+      path.push(<Point2d> { x: p.x, y: p.y })
+    }
+    for (let i = 0; i !== path.length; i++) {
+      const a: Point2d = path[i]
+      const b: Point2d = path[(i + 1) % path.length]
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const normal = normalize(<Point2d> { x: dy, y: -dx })
+      // const normal = <Point2d> {x: 0, y: 0}
+      a.x += normal.x * 0.5;
+      b.x += normal.x * 0.5;
+      a.y += normal.y * 0.5;
+      b.y += normal.y * 0.5;
+    }
+
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = to_rgb(zone);
+    ctx.beginPath();
+    for (let i = 0; i !== path.length; i++) {
+      const xpos = Math.round(zoom * (path[i].x - offsetX))
+      const ypos = Math.round(zoom * (path[i].y - offsetY))
+      if (i === 0) {
+        ctx.moveTo(xpos, ypos);
+      } else {
+        ctx.lineTo(xpos, ypos);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  }
+
+
+  ///////////////////////
 
   ctx.lineWidth = wall_thickness
   ctx.strokeStyle = "#000";

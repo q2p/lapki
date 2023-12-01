@@ -1,4 +1,5 @@
 use std::sync::Mutex;
+use std::str::FromStr;
 
 use serde::{Serialize, Deserialize};
 
@@ -93,6 +94,18 @@ static STATE: Mutex<RoomState> = Mutex::new(RoomState {
   radio_zones: Vec::new(),
 });
 
+#[derive(Clone)]
+pub struct Range {
+  pub min: f64,
+  pub max: f64,
+  pub pow: f64,
+}
+pub static RANGE: Mutex<Range> = Mutex::new(Range {
+  min: 0.31,
+  max: 0.368,
+  pow: 16.0,
+});
+
 pub fn write_config(config: RoomState) {
   let json = serde_json::to_string(&config).unwrap();
   {
@@ -104,6 +117,23 @@ pub fn write_config(config: RoomState) {
 pub fn load_config() {
   let file = std::fs::read_to_string("map.json").unwrap();
   *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
+}
+
+#[tauri::command]
+pub fn cmd_do(message: String) {
+  let mut args:Vec<&str> = message.split(" ").collect();
+  match args.remove(0) {
+    "max" => {
+      RANGE.lock().unwrap().max = f64::from_str(&args[1]).unwrap();
+    }
+    "min" => {
+      RANGE.lock().unwrap().min = f64::from_str(&args[1]).unwrap();
+    }
+    "pow" => {
+      RANGE.lock().unwrap().pow = f64::from_str(&args[1]).unwrap();
+    }
+    _ => {}
+  }
 }
 
 #[tauri::command]

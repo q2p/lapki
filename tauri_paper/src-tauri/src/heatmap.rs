@@ -4,10 +4,13 @@ use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{RwLock, Arc};
+use std::time::Duration;
+
+use rand::Rng;
 
 use crate::geometry::line_intersection;
 use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
-use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint};
+use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint, Range, RANGE};
 
 /// 5 GHz
 const CARRYING_FREQ: f64 = 5f64;
@@ -122,6 +125,7 @@ fn distance_to_zone(pix: Pos, zone: &RadioZone) -> f64 {
 
 // Вызывается по таймеру и перерисовывает картинку
 pub async fn next_image1(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
+  let range: Arc<Range> = { Arc::new(Range::clone(&RANGE.lock().unwrap())) };
   do_image(bb, regular_state.clone(), "../rimg1.png", Arc::new(move |pix| {
     // Рассматриваем каждую точку доступа
 
@@ -134,7 +138,7 @@ pub async fn next_image1(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, 
       .unwrap_or(0f64);
 
     // Обрезаем верхний и нижние участки выходящие за допустимые границы
-    let mut s = scale_dbs(dbm);
+    let mut s = scale_dbs(dbm, range.as_ref());
     // println!("{dBm}");
     // let mut s = ((dBm-0.35)*100.0).clamp(0.0, 1.0);
     // Делаем плавные переходы ступенчатыми (40 ступеней)
@@ -176,9 +180,9 @@ const DBMAX: f64 = 0.368;
 // Чтобы цвета было легче различать, мы должны привратить децибеллы,
 // в другую величину, которая более линейна, чтобы цвета были расположены
 // более равномерно
-const DBPOW: f64 = 4.0;
-fn scale_dbs(dBm: f64) -> f64 {
-  scale_dbs2(dBm, DBMIN, DBMAX, DBPOW)
+const DBPOW: f64 = 16.0;
+fn scale_dbs(dBm: f64, range: &Range) -> f64 {
+  scale_dbs2(dBm, range.min, range.max, range.pow)
 }
 fn scale_dbs2(v: f64, min: f64, max: f64, pow: f64) -> f64 {
   ((v - min) / (max - min)).clamp(0.0, 1.0).powf(pow)
@@ -388,7 +392,7 @@ pub async fn do_image2(
 
   let mut queued = Vec::with_capacity(threads);
 
-  for (y_from, y_to, _) in chop_ys(bb.res.1, threads) {
+  for (y_from, y_to, _) in chop_ys(bb.res.1, 1) {
     let bb = bb.clone();
     let regular_state = regular_state.clone();
     let next_guess = next_guess.clone();
@@ -405,7 +409,7 @@ pub async fn do_image2(
           let dbms = calc_powers_dbm(&regular_state, &next_guess, pix);
 
           for (zone, (min, max)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
-            if is_inside(pix, zone) {
+            //if is_inside(pix, zone) {
               let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
 
               if sinr < *min {
@@ -419,7 +423,7 @@ pub async fn do_image2(
                 //   length(pix, regular_state.radio_points[zone.desired_point_id].pos)
                 // )
               }
-            }
+            // }
           }
         }
       }
@@ -473,11 +477,15 @@ pub async fn do_image2(
 
             let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
 
+            if sinr < *min_sinr - 0.01 || sinr > *max_sinr + 0.01 {
+              std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(1..200)));
+              panic!("MINMAXEXPGOT: {min_sinr} {max_sinr} {sinr}.");
+            }
             let sinr_01 = scale_dbs2(sinr, *min_sinr, *max_sinr, 0.5);
             let sinr_01 = (sinr * 12.0).round() / 12.0;
 
             for i in 0..3 {
-              let color = 255.0 * (1.0 - sinr_01) + zone_rgb[i] as f64 * sinr_01;
+              let color = (255.0 * (1.0 - sinr_01)) + (zone_rgb[i] as f64 * sinr_01);
               A[i] += color / d;
               B[i] += 1.0 / d;
             }
@@ -501,6 +509,8 @@ pub async fn do_image2(
   for queued in queued {
     queued.await.unwrap();
   }
+
+  println!("drew");
 
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
