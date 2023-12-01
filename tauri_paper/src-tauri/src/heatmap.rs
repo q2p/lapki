@@ -3,18 +3,30 @@ use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
+<<<<<<< HEAD
 use std::sync::{RwLock, Arc, Mutex};
 
 use serde::Serialize;
+=======
+use std::sync::{RwLock, Arc};
+use std::time::Duration;
+
+use rand::Rng;
+>>>>>>> temp
 
 use crate::geometry::line_intersection;
 use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
-use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint};
+use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint, Range, RANGE};
 
 /// 5 GHz
 const CARRYING_FREQ: f64 = 5f64;
 
+<<<<<<< HEAD
 pub const STATIC_NOISE_DBM:f64 = -140.0;
+=======
+//pub const STATIC_NOISE_DBM:f64 = 0.2;
+pub const STATIC_NOISE_DBM:f64 = -110.0;
+>>>>>>> temp
 
 // Для закраски используем таблицу переходов между цветами.
 //  хранит точку, где цвет наиболее интенсивный.
@@ -32,6 +44,7 @@ struct State {
 
 // Вызывается по таймеру и перерисовывает картинку
 pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
+<<<<<<< HEAD
   // let mut rng = StdRng::from_entropy();
   // let shit_room = Arc::new(RoomState2 {
   //   points_signal_dbm: vec![mw_to_dbm(10.0), mw_to_dbm(45.0), mw_to_dbm(15.0)],
@@ -41,6 +54,16 @@ pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, n
   // next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
   do_image2(bb.clone(), regular_state.clone(), next_guess.clone(), "../rimg3.png").await;
   // do_image2(bb.clone(), regular_state.clone(), shit_room.clone(), "../rimg4.png").await;
+=======
+  // next_image1(bb.clone(), regular_state.clone(), next_guess.clone()).await;
+  // next_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
+  // next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
+  do_image2(bb.clone(), regular_state.clone(), next_guess.clone(), "../rimg3.png").await;
+  // let shitroom = RoomState2 {
+  //   points_signal_dbm: vec![50.0, 1000.0, 1.0],
+  // };
+  // do_image2(bb.clone(), regular_state.clone(), Arc::new(shitroom), "../rimg4.png").await;
+>>>>>>> temp
 }
 
 pub fn length(a: Pos, b: Pos) -> f64 {
@@ -124,6 +147,7 @@ fn distance_to_zone(pix: Pos, zone: &RadioZone) -> f64 {
 
 // Вызывается по таймеру и перерисовывает картинку
 pub async fn next_image1(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
+  let range: Arc<Range> = { Arc::new(Range::clone(&RANGE.lock().unwrap())) };
   do_image(bb, regular_state.clone(), "../rimg1.png", Arc::new(move |pix| {
     // Рассматриваем каждую точку доступа
 
@@ -131,12 +155,12 @@ pub async fn next_image1(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, 
     let dbm = regular_state.radio_points
       .iter()
       .zip(next_guess.points_signal_dbm.iter())
-      .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
+      .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
       .reduce(f64::min)
       .unwrap_or(0f64);
 
     // Обрезаем верхний и нижние участки выходящие за допустимые границы
-    let mut s = scale_dbs(dbm);
+    let mut s = scale_dbs(dbm, range.as_ref());
     // println!("{dBm}");
     // let mut s = ((dBm-0.35)*100.0).clamp(0.0, 1.0);
     // Делаем плавные переходы ступенчатыми (40 ступеней)
@@ -178,9 +202,9 @@ const DBMAX: f64 = 0.368;
 // Чтобы цвета было легче различать, мы должны привратить децибеллы,
 // в другую величину, которая более линейна, чтобы цвета были расположены
 // более равномерно
-const DBPOW: f64 = 4.0;
-fn scale_dbs(dBm: f64) -> f64 {
-  scale_dbs2(dBm, DBMIN, DBMAX, DBPOW)
+const DBPOW: f64 = 16.0;
+fn scale_dbs(dBm: f64, range: &Range) -> f64 {
+  scale_dbs2(dBm, range.min, range.max, range.pow)
 }
 fn scale_dbs2(v: f64, min: f64, max: f64, pow: f64) -> f64 {
   ((v - min) / (max - min)).clamp(0.0, 1.0).powf(pow)
@@ -232,7 +256,7 @@ pub async fn next_image3(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, 
     let mwts: Vec<f64> = regular_state.radio_points
       .iter()
       .zip(next_guess.points_signal_dbm.iter())
-      .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
+      .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
       .collect();
 
     const P: f64 = 2.0;
@@ -319,6 +343,7 @@ F: Fn(Pos) -> (u8, u8, u8) + Send + Sync + 'static,
   save_image(bb.res, state, png_path);
 }
 
+<<<<<<< HEAD
 #[derive(Clone, Serialize)]
 pub struct ActiveBestZone {
   point_x: f64,
@@ -341,6 +366,66 @@ static ACTIVE_BEST: Mutex<ActiveBest> = Mutex::new(ActiveBest { zones: Vec::new(
 #[tauri::command]
 pub fn get_active_best() -> Vec<ActiveBestZone> {
   ACTIVE_BEST.lock().unwrap().zones.clone()
+=======
+fn sum_dBm(dbm1: f64, dbm2: f64) -> f64 {
+  if dbm1 < dbm2 {
+    return dbm1 + 10.0 * f64::log10(1.0 + f64::powf(10.0, (dbm2 - dbm1) / 10.0));
+  } else {
+    return dbm2 + 10.0 * f64::log10(1.0 + f64::powf(10.0, (dbm1 - dbm2) / 10.0));
+  }
+}
+
+fn do_calc_sinr_dbm(
+  regular_state: &RoomState,
+  next_guess: &RoomState2,
+  zone: &RadioZone,
+  pix: Pos,
+) -> f64 {
+  let dbms = calc_powers_dbm(regular_state, next_guess, pix);
+
+  // let signal_mw = mwts[zone.desired_point_id];
+  // let all_signals_mw = mwts.iter().sum::<f64>();
+  // let interference_mw = all_signals_mw - signal_mw;
+
+  let mut signal_dbm = -200.0;
+  let mut interference_dbm = -200.0;
+
+  for (i, dbm) in dbms.iter().enumerate() {
+    if i == zone.desired_point_id {
+      signal_dbm = sum_dBm(signal_dbm, *dbm);
+    } else {
+      interference_dbm = sum_dBm(interference_dbm, *dbm);
+    }
+  }
+
+  // signal - all signals = (s)/(s+i+n)
+  // max limit: 400mw на точке доступа
+  // min limit: -5db в худшей точке зоны.
+  let int_noise_dbm = sum_dBm(interference_dbm, STATIC_NOISE_DBM);
+  // let int_noise_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
+  let sinr = mw_to_dbm(dbm_to_mw(signal_dbm) / dbm_to_mw(int_noise_dbm));
+  // let sinr = mw_to_dbm(signal_mw / int_noise);
+
+  // println!("signals: {:?}dbms", &dbms);
+  // println!("sig: {}dbm", signal_dbm);
+  // println!("int: {}dbm", interference_dbm);
+  // println!("int+noise: {}dbm", int_noise_dbm);
+  // println!("sinr: {}", sinr);
+  // println!("");
+
+  /////////////////
+
+
+  // let signal = mws[zone.desired_point_id];
+  // let all_signals = mws.iter().sum::<f64>();
+  // let interference = all_signals - signal;
+  // signal - all signals = (s)/(s+i+n)
+  // max limit: 400mw на точке доступа
+  // min limit: -5db в худшей точке зоны.
+  // let sinr = mw_to_dbm(signal / (interference + dbm_to_mw(STATIC_NOISE_DBM)));
+
+  return sinr;
+>>>>>>> temp
 }
 
 // Вызывается по таймеру и перерисовывает картинку
@@ -348,13 +433,17 @@ pub async fn do_image2(
   bb: Arc<BoundingBoxes>,
   regular_state: Arc<RoomState>,
   next_guess: Arc<RoomState2>,
+<<<<<<< HEAD
   path: &str,
+=======
+  rimg_path: &str,
+>>>>>>> temp
 ) {
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
   let mut queued = Vec::with_capacity(threads);
 
-  for (y_from, y_to, _) in chop_ys(bb.res.1, threads) {
+  for (y_from, y_to, _) in chop_ys(bb.res.1, 1) {
     let bb = bb.clone();
     let regular_state = regular_state.clone();
     let next_guess = next_guess.clone();
@@ -368,12 +457,9 @@ pub async fn do_image2(
           let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
           // Рассматриваем каждую точку доступа
-          let mwts: Vec<f64> = regular_state.radio_points
-            .iter()
-            .zip(next_guess.points_signal_dbm.iter())
-            .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
-            .collect();
+          let dbms = calc_powers_dbm(&regular_state, &next_guess, pix);
 
+<<<<<<< HEAD
           for (zone, (min, max, min_xy)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
             if is_inside(pix, zone) {
               let signal_mw = mwts[zone.desired_point_id];
@@ -384,6 +470,11 @@ pub async fn do_image2(
               // min limit: -5db в худшей точке зоны.
               let int_noise = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
               let sinr = mw_to_dbm(signal_mw / int_noise);
+=======
+          for (zone, (min, max)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
+            //if is_inside(pix, zone) {
+              let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
+>>>>>>> temp
 
               if sinr < *min {
                 *min = sinr;
@@ -397,7 +488,7 @@ pub async fn do_image2(
                 //   length(pix, regular_state.radio_points[zone.desired_point_id].pos)
                 // )
               }
-            }
+            // }
           }
         }
       }
@@ -462,13 +553,6 @@ pub async fn do_image2(
         for x in 0..bb.res.0 {
           let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
-          // Рассматриваем каждую точку доступа
-          let mws: Vec<f64> = regular_state.radio_points
-            .iter()
-            .zip(next_guess.points_signal_dbm.iter())
-            .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
-            .collect();
-
           const P: f64 = 2.0;
 
           let mut A = [ 0.0, 0.0, 0.0 ];
@@ -479,20 +563,18 @@ pub async fn do_image2(
           for ((zone, (min_sinr, max_sinr, min_pos)), power_dbm) in iter {
             let zone_rgb = [zone.r, zone.g, zone.b];
             let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
-            let signal = mws[zone.desired_point_id];
-            let all_signals = mws.iter().sum::<f64>();
-            let interference = all_signals - signal;
-            // signal - all signals = (s)/(s+i+n)
-            // max limit: 400mw на точке доступа
-            // min limit: -5db в худшей точке зоны.
-            let sinr = mw_to_dbm(signal / (interference + dbm_to_mw(STATIC_NOISE_DBM)));
 
-            let sinr_01 = sinr;
-            let sinr_01 = scale_dbs2(sinr_01, *min_sinr, *max_sinr, 0.5);
-            let sinr_01 = (sinr_01 * 12.0).round() / 12.0;
+            let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
+
+            if sinr < *min_sinr - 0.01 || sinr > *max_sinr + 0.01 {
+              std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(1..200)));
+              panic!("MINMAXEXPGOT: {min_sinr} {max_sinr} {sinr}.");
+            }
+            let sinr_01 = scale_dbs2(sinr, *min_sinr, *max_sinr, 0.5);
+            let sinr_01 = (sinr * 12.0).round() / 12.0;
 
             for i in 0..3 {
-              let color = 255.0 * (1.0 - sinr_01) + zone_rgb[i] as f64 * sinr_01;
+              let color = (255.0 * (1.0 - sinr_01)) + (zone_rgb[i] as f64 * sinr_01);
               A[i] += color / d;
               B[i] += 1.0 / d;
             }
@@ -517,27 +599,57 @@ pub async fn do_image2(
     queued.await.unwrap();
   }
 
+  println!("drew");
+
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
 
+<<<<<<< HEAD
   save_image(bb.res, state, path);
+=======
+  save_image(bb.res, state, rimg_path);
+}
+
+fn calc_powers_dbm(regular_state: &RoomState, next_guess: &RoomState2, pix: Pos) -> Box<[f64]> {
+  regular_state.radio_points
+    .iter()
+    .zip(next_guess.points_signal_dbm.iter())
+    .map(|(point, power_dbm)| dbm_after_walls(regular_state, pix, point, *power_dbm))
+    .collect::<Vec<_>>()
+    .into_boxed_slice()
+>>>>>>> temp
 }
 
 // Находит силу сигнала от точки в определённом пикселе.
-pub fn mw_after_walls(regular_state: &RoomState, pixel: Pos, point: &RadioPoint, power_dbm: f64) -> f64 {
+pub fn dbm_after_walls(regular_state: &RoomState, pixel: Pos, point: &RadioPoint, power_dbm: f64) -> f64 {
+  let power_dbm = mw_to_dbm(200.0);
+
+  let mut length = length(point.pos, pixel).max(1.0);
+
   // Находим где находится точко относительно текущего пикселя
-  let mut path_loss = 38.3 * f64::log10(length(point.pos, pixel).max(1.0)) + 24.9 * f64::log10(CARRYING_FREQ) + 17.3;
+  let mut path_loss = 38.3 * f64::log10(length) + 24.9 * f64::log10(CARRYING_FREQ) + 17.3;
 
   // Смотрим сколько стен пересекаются с лучём видимости.
 
   let mut wall_loss = 0f64;
-  for wall in regular_state.walls.iter() {
-    if line_intersection((pixel, point.pos), (wall.a, wall.b)).is_some() {
-      wall_loss += wall.damping;
-    }
-  }
+  // for wall in regular_state.walls.iter() {
+  //   if line_intersection((pixel, point.pos), (wall.a, wall.b)).is_some() {
+  //     wall_loss += wall.damping;
+  //   }
+  // }
 
-  return dbm_to_mw(power_dbm - path_loss - wall_loss);
+  let dbm_ret = power_dbm - path_loss - wall_loss;
+  let mw_ret = dbm_to_mw(dbm_ret);
+  // println!("power_dbm: {power_dbm}dbm");
+  // println!("path_loss: {path_loss}dbm");
+  // println!("wall_loss: {wall_loss}dbm");
+  // println!("dbm_ret: {dbm_ret}dbm");
+  // println!("mw_ret: {mw_ret}mw");
+  // println!("mw_ret: {mw_ret}mw");
+  // println!("length: {length}m");
+  // println!("");
+
+  return dbm_ret;
 }
 
 fn save_image<P: AsRef<Path>>(res: (usize, usize), scene: &mut [u8], path: P) {
@@ -569,3 +681,96 @@ pub fn pix_to_meter(bb: &BoundingBoxes, p: Px) -> Pos {
     bb.min.y + p.y as f64 * bb.wh.y / bb.res.1 as f64 + (bb.wh.y / (2 * bb.res.1) as f64),
   )
 }
+<<<<<<< HEAD
+=======
+
+fn paint_walls(bb: &BoundingBoxes, regular_state: &RoomState, scene: &mut [u8]) {
+  // Рисуем стены поверх изображения интенсивностей
+  for w in &regular_state.walls {
+    let a = meter_to_pix(bb, w.a);
+    let b = meter_to_pix(bb, w.b);
+    let ax = a.x as isize;
+    let ay = a.y as isize;
+    let bx = b.x as isize;
+    let by = b.y as isize;
+    // tline(&mut state.scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00, 4);
+    dline(bb.res.0, scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00);
+    // bline(&mut state.scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00);
+  }
+}
+
+fn dline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
+  bline(width, dest, Px::new(p0.x, p0.y), Px::new(p1.x, p1.y), r, g, b);
+  bline(width, dest, Px::new(p0.x, p0.y - 1), Px::new(p1.x, p1.y - 1), r, g, b);
+  bline(width, dest, Px::new(p0.x, p0.y + 1), Px::new(p1.x, p1.y + 1), r, g, b);
+  bline(width, dest, Px::new(p0.x - 1, p0.y), Px::new(p1.x - 1, p1.y), r, g ,b);
+  bline(width, dest, Px::new(p0.x + 1, p0.y), Px::new(p1.x + 1, p1.y), r, g ,b);
+}
+
+
+fn tline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8, thickness: u8) {
+  bline(width, dest, p0, p1, r, g, b);
+  let dy = (p1.y - p0.y).abs();
+  let dx = (p1.x - p0.x).abs();
+  let wz = (thickness - 1) as isize * ((dx * dx + dy * dy) as f64).sqrt() as isize;
+  if dx > dy {
+    let wy = wz / (2 * dx);
+    for i in 0..wy {
+      bline(width, dest, Px::new(p0.x, p0.y - i), Px::new(p1.x, p1.y - i), r, g, b);
+      bline(width, dest, Px::new(p0.x, p0.y + i), Px::new(p1.x, p1.y + i), r, g, b);
+    }
+  } else {
+    let wx = wz / (2 * dy);
+    for i in 0..wx {
+      bline(width, dest, Px::new(p0.x - i, p0.y), Px::new(p1.x - i, p1.y), r, g ,b);
+      bline(width, dest, Px::new(p0.x + i, p0.y), Px::new(p1.x + i, p1.y), r, g ,b);
+    }
+  }
+}
+#[inline(always)]
+fn put(width: usize, dest: &mut [u8], x: isize, y: isize, r: u8, g: u8, b: u8) {
+  let offset = (y as usize * width + x as usize) * 3;
+  unsafe {
+    *dest.get_unchecked_mut(offset  ) = r;
+    *dest.get_unchecked_mut(offset+1) = g;
+    *dest.get_unchecked_mut(offset+2) = b;
+  }
+  // dest[offset  ] = r;
+  // dest[offset+1] = g;
+  // dest[offset+2] = b;
+}
+fn bline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
+  let dx = (p1.x - p0.x).abs();
+  let dy = (p1.y - p0.y).abs();
+  let xinc = if p0.x < p1.x { 1 } else { -1 };
+  let yinc = if p0.y < p1.y { 1 } else { -1 };
+  let mut x = p0.x;
+  let mut y = p0.y;
+  put(width, dest, x, y, r, g, b);
+  if dx >= dy {
+    let mut e = (2 * dy) - dx;
+    while x != p1.x {
+      if e < 0 {
+        e += 2 * dy;
+      } else {
+        e += 2 * (dy - dx);
+        y += yinc;
+      }
+      x += xinc;
+      put(width, dest, x, y, r, g, b);
+    }
+  } else {
+    let mut e = (2 * dx) - dy;
+    while y != p1.y {
+      if e < 0 {
+        e += 2 * dx;
+      } else {
+        e += 2 * (dx - dy);
+        x += xinc;
+      }
+      y += yinc;
+      put(width, dest, x, y, r, g, b);
+    }
+  }
+}
+>>>>>>> temp
