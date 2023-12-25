@@ -1,25 +1,194 @@
-use minifb::{Key, Window, WindowOptions};
+use std::{path::Path, time::{Instant, Duration}, ops::Sub, task::Wake};
+
+use clap::Parser;
+use minifb::{Key, Window, WindowOptions, KeyRepeat, Scale, ScaleMode};
 use image::{io::Reader as ImageReader, GenericImageView};
 use rand::Rng;
+
+struct Ticker {
+    next: Instant,
+    lt: u64,
+    rem: u64,
+}
+const DIST: Duration = Duration::from_millis(1000 / 25);
+impl Ticker {
+    pub fn new() -> Ticker {
+        Ticker {
+            next: Instant::now(),
+            lt: 0,
+            rem: 0,
+        }
+    }
+    pub fn tick(&mut self) -> bool {
+        if self.rem != self.lt {
+            self.rem += 1;
+            return false;
+        }
+        let now = Instant::now();
+        let prev = self.next - DIST;
+        let passed = (now - prev).as_secs_f64() / DIST.as_secs_f64();
+        self.lt = ((self.lt as f64 / passed).ceil() as u64).max(1);
+        if now < self.next {
+            return false;
+        }
+        self.rem = 0;
+        while self.next < now {
+            self.next += DIST;
+        }
+        return true;
+    }
+}
+
+#[derive(Parser, Debug)]
+#[command()]
+struct Args {
+    #[arg(long)]
+    img: Box<Path>,
+
+    #[arg(long)]
+    hsize: usize,
+
+    #[arg(long)]
+    hlayers: usize,
+
+    #[arg(long)]
+    lrate: f64,
+
+    #[arg(long)]
+    mbatch: usize,
+}
+
+struct Layer {
+    /// Weights
+    w: Box<[f64]>,
+    /// Biases
+    b: Box<[f64]>,
+    /// Activations
+    a: Box<[f64]>,
+
+    da: Box<[f64]>,
+    iters_db: usize,
+    dw: Box<[f64]>,
+    db: Box<[f64]>,
+    dwt: Box<[f64]>,
+    dbt: Box<[f64]>,
+
+    dwm: Box<[f64]>,
+    dbm: Box<[f64]>,
+
+    acf: fn(f64) -> f64,
+    der: fn(f64) -> f64,
+}
+
+impl Layer {
+    fn new(inp: usize, out: usize, acf: fn(f64) -> f64, der: fn(f64) -> f64) -> Layer {
+        let mut ret = Layer {
+            w: vec![0.0; inp*out].into_boxed_slice(),
+            b: vec![0.0; out].into_boxed_slice(),
+            a: vec![0.0; out].into_boxed_slice(),
+            da: vec![0.0; out].into_boxed_slice(),
+            dw: vec![0.0; inp*out].into_boxed_slice(),
+            dwt: vec![0.0; inp*out].into_boxed_slice(),
+            dwm: vec![0.0; inp*out].into_boxed_slice(),
+            db: vec![0.0; out].into_boxed_slice(),
+            dbt: vec![0.0; out].into_boxed_slice(),
+            dbm: vec![0.0; out].into_boxed_slice(),
+            iters_db: 0,
+            acf, der,
+        };
+
+        let mut rng = rand::thread_rng();
+        for i in ret.w.iter_mut() {
+            *i = rng.gen_range(-1.0..1.0);
+        }
+
+        return ret;
+    }
+
+    fn concat_diff(total: &mut[f64], new: &[f64]) {
+        assert_eq!(total.len(), new.len());
+        for (t, c) in total.iter_mut().zip(new.iter()) {
+            *t += c;
+        }
+    }
+
+    fn update_all(&mut self, lr: f64) {
+        let alpha: f64 = lr / self.iters_db as f64;
+        Self::update(&mut self.b, &mut self.dbt, &mut self.dbm, alpha);
+        Self::update(&mut self.w, &mut self.dwt, &mut self.dwm, alpha);
+        self.iters_db = 0;
+    }
+
+    fn update(v: &mut [f64], d: &mut [f64], m: &mut [f64], alpha: f64) {
+        assert_eq!(v.len(), d.len());
+        assert_eq!(v.len(), m.len());
+        unsafe {
+            for i in 0..v.len() {
+                let v = v.get_unchecked_mut(i);
+                let d = d.get_unchecked_mut(i);
+                let m = m.get_unchecked_mut(i);
+
+                *m = MOMENTUM * *m + alpha * *d;
+                *v = *v + *m;
+                *d = 0.0;
+            }
+        }
+    }
+
+    fn back_prop(&mut self, inp: &[f64], din: &mut [f64]) {
+        assert_eq!(inp.len(), din.len());
+        assert_eq!(inp.len() * self.a.len(), self.w.len());
+        din.fill(0.0);
+        unsafe {
+            for i in 0..self.a.len() {
+                let dz = *self.da.get_unchecked(i) * (self.der)(*self.a.get_unchecked(i));
+                for j in 0..inp.len() {
+                    *self.dw.get_unchecked_mut(i*inp.len()+j) = dz * *inp.get_unchecked(j);
+                    *din.get_unchecked_mut(j) += *self.w.get_unchecked(i*inp.len()+j) * dz;
+                }
+                *self.db.get_unchecked_mut(i) = dz;
+            }
+        }
+        self.iters_db += 1;
+    }
+
+    fn forward_prop(&mut self, inp: &[f64]) {
+        assert_eq!(self.a.len() * inp.len(), self.w.len());
+        for i in 0..self.a.len() {
+            unsafe {
+                *self.a.get_unchecked_mut(i) = *self.b.get_unchecked(i);
+                for j in 0..inp.len() {
+                    *self.a.get_unchecked_mut(i) += *inp.get_unchecked(j) * *self.w.get_unchecked(i*inp.len()+j);
+                }
+                *self.a.get_unchecked_mut(i) = (self.acf)(*self.a.get_unchecked(i));
+            }
+        }
+    }
+}
 
 fn to_bgra(r: u8, g: u8, b: u8) -> u32 {
     u32::from_le_bytes([b, g, r, 0xFF])
 }
+const MOMENTUM: f64 = 0.9;
 fn main() {
-    let img = ImageReader::open("src.png").unwrap().decode().unwrap();
+    let mut ticker = Ticker::new();
+
+    let args = Args::parse();
+
+    let img = ImageReader::open(&args.img).unwrap().decode().unwrap();
     let width = img.width() as usize;
     let height = img.height() as usize;
     let mut buffer: Vec<u32> = vec![0; (2*width) * height];
 
+    let mut options = WindowOptions::default();
+    options.scale = Scale::X4;
+    options.scale_mode = ScaleMode::Stretch;
     let mut window = Window::new(
         "Test - ESC to exit",
         2*width,
         height,
-        WindowOptions::default(),
+        options
     ).unwrap();
-
-    // Limit to max ~60 fps update rate
-    window.limit_update_rate(Some(std::time::Duration::from_micros(16600)));
 
     for y in 0..height {
         for x in 0..width {
@@ -28,171 +197,105 @@ fn main() {
         }
     }
 
-    const INS: usize = 2;
-    const HLS: usize = 64;
-    let mut w0 = vec![0.0; INS*HLS];
-    let mut w1 = vec![0.0; HLS*HLS];
-    let mut w2 = vec![0.0; HLS*3];
+    let acf = tanh;
+    let der = tanh_der;
+    // let acf = relu;
+    // let der = relu_der;
 
-    let mut b0 = vec![0.0; HLS];
-    let mut b1 = vec![0.0; HLS];
-    let mut b2 = vec![0.0; 3];
+    let mut layers = Vec::new();
+    layers.push(Layer::new(2, args.hsize, acf, der));
+    for _ in 0..args.hlayers {
+        layers.push(Layer::new(args.hsize, args.hsize, acf, der));
+    }
+    layers.push(Layer::new(args.hsize, 3, tanh, tanh_der));
+    // layers.push(Layer::new(args.hsize, 3, acf, der));
 
-    let mut a0 = vec![0.0; HLS];
-    let mut a1 = vec![0.0; HLS];
-    let mut a2 = vec![0.0; 3];
+    let mut rng = rand::thread_rng();
 
-    let mut dins = vec![0.0; INS];
-    let mut d0 = vec![0.0; HLS];
-    let mut d1 = vec![0.0; HLS];
-    let mut d2 = vec![0.0; 3];
+    while window.is_open() && !window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+        let mb_iter = (0..args.mbatch).map(|_| {
+            let x = rng.gen_range(0..width);
+            let y = rng.gen_range(0..height);
+            (x, y)
+        });
+        let abs_iter = (0..width*height).map(|i| (i % width, i / width));
 
-    fill_rng(&mut w0);
-    fill_rng(&mut w1);
-    fill_rng(&mut w2);
+        for (x, y) in mb_iter {
+            let ix = scale_xy(x, width);
+            let iy = scale_xy(y, height);
+            let [r, g, b, _] = img.get_pixel(x as u32, y as u32).0.map(scale_rgb);
+            let exp = [r, g, b];
 
-    fill_rng(&mut b0);
-    fill_rng(&mut b1);
+            let ins: &[f64] = &[ix, iy];
+            let mut prev = ins;
+            for l in layers.iter_mut() {
+                l.forward_prop(prev);
+                prev = &l.a;
+            }
 
-    fill_rng(&mut a0);
-    fill_rng(&mut a1);
-
-    let mut iters_db = 0;
-    let mut dbw0 = vec![0.0; w0.len()];
-    let mut dbw1 = vec![0.0; w1.len()];
-    let mut dbw2 = vec![0.0; w2.len()];
-    let mut dbb0 = vec![0.0; b0.len()];
-    let mut dbb1 = vec![0.0; b1.len()];
-    let mut dbb2 = vec![0.0; b2.len()];
-    let mut dbw0t = vec![0.0; w0.len()];
-    let mut dbw1t = vec![0.0; w1.len()];
-    let mut dbw2t = vec![0.0; w2.len()];
-    let mut dbb0t = vec![0.0; b0.len()];
-    let mut dbb1t = vec![0.0; b1.len()];
-    let mut dbb2t = vec![0.0; b2.len()];
-
-    while window.is_open() && !window.is_key_down(Key::Escape) {
-        for y in 0..height {
-            for x in 0..width {
-                let ix = scale_xy(x, width);
-                let iy = scale_xy(y, height);
-                let ins = vec![ix, iy];
-                let [r, g, b, _] = img.get_pixel(x as u32, y as u32).0.map(scale_rgb);
-                let exp = [r, g, b];
-
-                forward_prop(&ins, &mut a0, &b0, &mut w0, relu);
-                forward_prop(&a0, &mut a1, &b1, &mut w1, relu);
-                forward_prop(&a1, &mut a2, &b2, &mut w2, tanh);
-
-                let r = unscale_rgb(a2[0]);
-                let g = unscale_rgb(a2[1]);
-                let b = unscale_rgb(a2[2]);
+            {
+                let last = layers.last_mut().unwrap();
+                let r = unscale_rgb(last.a[0]);
+                let g = unscale_rgb(last.a[1]);
+                let b = unscale_rgb(last.a[2]);
                 buffer[y*2*width+x+width] = to_bgra(r, g, b);
 
                 for i in 0..3 {
-                    d2[i] = exp[i] - a2[i];
+                    last.da[i] = exp[i] - last.a[i];
                 }
+            }
 
-                back_prop(
-                    &a1, &a2,
-                    &w2,
-                    &mut dbb2, &mut dbw2,
-                    &mut d1, &mut d2,
-                    tanh_der
-                );
+            let mut iters = layers.iter_mut().rev();
+            let mut next = iters.next().unwrap();
+            for prev in iters {
+                next.back_prop(&prev.a, &mut prev.da);
+                next = prev;
+            }
+            next.back_prop(ins, &mut [0.0; 2]);
 
-                back_prop(
-                    &a0, &a1,
-                    &w1,
-                    &mut dbb1, &mut dbw1,
-                    &mut d0, &mut d1,
-                    relu_der
-                );
-
-                back_prop(
-                    &ins, &a0,
-                    &w0,
-                    &mut dbb0, &mut dbw0,
-                    &mut dins, &mut d0,
-                    relu_der
-                );
-
-                concat_diff(&mut dbb0t, &dbb0);
-                concat_diff(&mut dbb1t, &dbb1);
-                concat_diff(&mut dbb2t, &dbb2);
-                concat_diff(&mut dbw0t, &dbw0);
-                concat_diff(&mut dbw1t, &dbw1);
-                concat_diff(&mut dbw2t, &dbw2);
-
-                iters_db += 1;
+            for l in layers.iter_mut() {
+                Layer::concat_diff(&mut l.dbt, &mut l.db);
+                Layer::concat_diff(&mut l.dwt, &mut l.dw);
             }
         }
 
-        dump("dbb1", &dbb1t);
-        dump("dbw1", &dbw1t);
-        dump("b1", &b1);
-        dump("w1", &w1);
+        for l in layers.iter_mut() {
+            l.update_all(args.lrate);
+        }
+
+        if ticker.tick() {
+            for y in 0..height {
+                for x in 0..width {
+                    let ix = scale_xy(x, width);
+                    let iy = scale_xy(y, height);
+
+                    let mut prev: &[f64] = &[ix, iy];
+                    for l in layers.iter_mut() {
+                        l.forward_prop(prev);
+                        prev = &mut l.a;
+                    }
+
+                    {
+                        let last = layers.last_mut().unwrap();
+                        let r = unscale_rgb(last.a[0]);
+                        let g = unscale_rgb(last.a[1]);
+                        let b = unscale_rgb(last.a[2]);
+                        buffer[y*2*width+x+width] = to_bgra(r, g, b);
+                    }
+
+                }
+            }
+        }
 
         window.update_with_buffer(&buffer, 2*width, height).unwrap();
-
-        update(&mut w0, &mut dbw0t, iters_db);
-        update(&mut w1, &mut dbw1t, iters_db);
-        update(&mut w2, &mut dbw2t, iters_db);
-        update(&mut b0, &mut dbb0t, iters_db);
-        update(&mut b1, &mut dbb1t, iters_db);
-        update(&mut b2, &mut dbb2t, iters_db);
     }
 }
 
 fn dump(name: &str, dbw: &[f64]) {
     const TP: usize = 5;
-    let i = (dbw.len() - TP).max(0) / 2;
+    let i = (dbw.len() as isize - TP as isize).max(0) as usize / 2;
     let j = (i + TP).min(dbw.len());
     println!("{name}: {:?}", &dbw[i..j]);
-}
-
-fn concat_diff(total: &mut[f64], new: &[f64]) {
-    assert_eq!(total.len(), new.len());
-    for (t, c) in total.iter_mut().zip(new.iter()) {
-        *t += c;
-    }
-}
-
-fn update(v: &mut [f64], d: &mut [f64], iters: usize) {
-    const ALPHA: f64 = 0.1;
-    for (v, d) in v.iter_mut().zip(d.iter_mut()) {
-        *v += ALPHA * *d / iters as f64;
-        *d = 0.0;
-    }
-}
-
-fn back_prop(inp: &[f64], out: &[f64], w: &[f64], db: &mut [f64], dw: &mut [f64], din: &mut [f64], dout: &[f64], deriv: fn(f64) -> f64) {
-    din.fill(0.0);
-    for i in 0..out.len() {
-        let dz = (dout[i]) * (deriv)(out[i]);
-        for j in 0..inp.len() {
-            dw[i*inp.len()+j] = dz * inp[j];
-            din[j] += w[i*inp.len()+j] * dz;
-        }
-        db[i] = dz;
-    }
-}
-
-fn forward_prop(inp: &[f64], out: &mut [f64], b: &[f64], w: &[f64], func: fn(f64) -> f64) {
-    for i in 0..out.len() {
-        out[i] = b[i];
-        for j in 0..inp.len() {
-            out[i] += inp[j] * w[i*inp.len()+j];
-        }
-        out[i] = (func)(out[i]);
-    }
-}
-
-fn fill_rng(w: &mut [f64]) {
-    let mut rng = rand::thread_rng();
-    for i in w.iter_mut() {
-        *i = rng.gen_range(-1.0..1.0);
-    }
 }
 
 fn relu(x: f64) -> f64 {
@@ -216,7 +319,7 @@ fn tanh(x: f64) -> f64 {
 }
 
 fn tanh_der(x: f64) -> f64 {
-    1.0 - x.tanh().powi(2)
+    1.0 - x*x
 }
 
 fn scale_xy(v: usize, size: usize) -> f64 {
