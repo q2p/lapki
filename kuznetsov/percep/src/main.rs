@@ -1,6 +1,6 @@
 use std::{path::Path, time::{Instant, Duration}, ops::Sub, task::Wake};
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use minifb::{Key, Window, WindowOptions, KeyRepeat, Scale, ScaleMode};
 use image::{io::Reader as ImageReader, GenericImageView};
 use rand::Rng;
@@ -56,6 +56,15 @@ struct Args {
 
     #[arg(long)]
     mbatch: usize,
+
+    #[arg(long)]
+    afn: ActivationFunction,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+enum ActivationFunction {
+    LRELU,
+    TanH,
 }
 
 struct Layer {
@@ -183,12 +192,7 @@ fn main() {
     let mut options = WindowOptions::default();
     options.scale = Scale::X4;
     options.scale_mode = ScaleMode::Stretch;
-    let mut window = Window::new(
-        "Test - ESC to exit",
-        2*width,
-        height,
-        options
-    ).unwrap();
+    let mut window = Window::new("Не мешайте сети тренироваться!", 2*width, height, options).unwrap();
 
     for y in 0..height {
         for x in 0..width {
@@ -197,18 +201,17 @@ fn main() {
         }
     }
 
-    let acf = tanh;
-    let der = tanh_der;
-    // let acf = relu;
-    // let der = relu_der;
+    let (af, der): (fn(f64)->f64, fn(f64)->f64) = match args.afn {
+        ActivationFunction::LRELU => (leaky_relu, leaky_relu_der),
+        ActivationFunction::TanH => (tanh, tanh_der),
+    };
 
     let mut layers = Vec::new();
-    layers.push(Layer::new(2, args.hsize, acf, der));
+    layers.push(Layer::new(2, args.hsize, af, der));
     for _ in 0..args.hlayers {
-        layers.push(Layer::new(args.hsize, args.hsize, acf, der));
+        layers.push(Layer::new(args.hsize, args.hsize, af, der));
     }
     layers.push(Layer::new(args.hsize, 3, tanh, tanh_der));
-    // layers.push(Layer::new(args.hsize, 3, acf, der));
 
     let mut rng = rand::thread_rng();
 
@@ -291,26 +294,20 @@ fn main() {
     }
 }
 
-fn dump(name: &str, dbw: &[f64]) {
-    const TP: usize = 5;
-    let i = (dbw.len() as isize - TP as isize).max(0) as usize / 2;
-    let j = (i + TP).min(dbw.len());
-    println!("{name}: {:?}", &dbw[i..j]);
-}
-
-fn relu(x: f64) -> f64 {
+const LRELU_PARAM: f64 = 0.01;
+fn leaky_relu(x: f64) -> f64 {
     if x > 0.0 {
         x
     } else {
-        0.1 * x
+        LRELU_PARAM * x
     }
 }
 
-fn relu_der(x: f64) -> f64 {
+fn leaky_relu_der(x: f64) -> f64 {
     if x > 0.0 {
         1.0
     } else {
-        0.1
+        LRELU_PARAM
     }
 }
 
