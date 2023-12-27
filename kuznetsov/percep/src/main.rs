@@ -1,5 +1,4 @@
-use std::{path::Path, time::{Instant, Duration}, ops::Sub, task::Wake};
-
+use std::{path::Path, time::{Instant, Duration}, f64::consts::PI};
 use clap::{Parser, ValueEnum};
 use minifb::{Key, Window, WindowOptions, KeyRepeat, Scale, ScaleMode};
 use image::{io::Reader as ImageReader, GenericImageView};
@@ -10,7 +9,7 @@ struct Ticker {
     lt: u64,
     rem: u64,
 }
-const DIST: Duration = Duration::from_millis(1000 / 25);
+const DIST: Duration = Duration::from_millis(1000 / 10);
 impl Ticker {
     pub fn new() -> Ticker {
         Ticker {
@@ -59,6 +58,9 @@ struct Args {
 
     #[arg(long)]
     afn: ActivationFunction,
+
+    #[arg(long)]
+    trig: u8,
 }
 
 #[derive(ValueEnum, Debug, Clone, Copy)]
@@ -178,6 +180,18 @@ impl Layer {
 fn to_bgra(r: u8, g: u8, b: u8) -> u32 {
     u32::from_le_bytes([b, g, r, 0xFF])
 }
+fn get_ins(x: f64, y: f64, trig_fn_count: u8) -> Box<[f64]> {
+    let mut ret = Vec::new();
+    for c in [x,y] {
+        ret.push(c);
+        for i in [1, 2, 3, 7, 13].iter().take(trig_fn_count.into()) {
+            let s = *i as f64 * PI;
+            ret.push((s*c+12634.32451*s).cos());
+        }
+    }
+    return ret.into_boxed_slice();
+}
+
 const MOMENTUM: f64 = 0.9;
 fn main() {
     let mut ticker = Ticker::new();
@@ -207,7 +221,8 @@ fn main() {
     };
 
     let mut layers = Vec::new();
-    layers.push(Layer::new(2, args.hsize, af, der));
+    let is = get_ins(0.0, 0.0, args.trig).len();
+    layers.push(Layer::new(is, args.hsize, af, der));
     for _ in 0..args.hlayers {
         layers.push(Layer::new(args.hsize, args.hsize, af, der));
     }
@@ -221,7 +236,7 @@ fn main() {
             let y = rng.gen_range(0..height);
             (x, y)
         });
-        let abs_iter = (0..width*height).map(|i| (i % width, i / width));
+        // let abs_iter = (0..width*height).map(|i| (i % width, i / width));
 
         for (x, y) in mb_iter {
             let ix = scale_xy(x, width);
@@ -229,7 +244,8 @@ fn main() {
             let [r, g, b, _] = img.get_pixel(x as u32, y as u32).0.map(scale_rgb);
             let exp = [r, g, b];
 
-            let ins: &[f64] = &[ix, iy];
+            // let ins: &[f64] = &[ix, iy];
+            let ins: &[f64] = &get_ins(ix, iy, args.trig);
             let mut prev = ins;
             for l in layers.iter_mut() {
                 l.forward_prop(prev);
@@ -254,7 +270,7 @@ fn main() {
                 next.back_prop(&prev.a, &mut prev.da);
                 next = prev;
             }
-            next.back_prop(ins, &mut [0.0; 2]);
+            next.back_prop(ins, &mut vec![0.0; ins.len()]);
 
             for l in layers.iter_mut() {
                 Layer::concat_diff(&mut l.dbt, &mut l.db);
@@ -272,7 +288,8 @@ fn main() {
                     let ix = scale_xy(x, width);
                     let iy = scale_xy(y, height);
 
-                    let mut prev: &[f64] = &[ix, iy];
+                    // let mut prev: &[f64] = &[ix, iy];
+                    let mut prev: &[f64] = &get_ins(ix, iy, args.trig);
                     for l in layers.iter_mut() {
                         l.forward_prop(prev);
                         prev = &mut l.a;
