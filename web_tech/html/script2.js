@@ -21,9 +21,9 @@ class Particle {
   constructor() {
     this.y = -RAD;
     this.x = rand(-RAD, W + RAD)
-    this.dy = rand(0.9, 1.2) * (H + RAD)
+    this.dy = rand(0.6, 1.2) * (H + RAD)
     const shift = Math.max(-1, Math.min(1, 2 * (this.x / W) - 1))
-    this.dx = W * (rand(-1, 1) - Math.pow(shift, 10)) * 0.5
+    this.dx = W * (rand(-1, 1) - Math.pow(shift, 10) * 0.5) * 0.2
     this.el = document.createElement("div")
     this.el.classList.add("particle")
     this.el.textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)]
