@@ -1,5 +1,8 @@
 const back = document.createElement("div")
+const overlay = document.createElement("div")
 back.classList.add("background")
+overlay.classList.add("overlay")
+document.body.insertBefore(overlay, document.body.firstChild)
 document.body.insertBefore(back, document.body.firstChild)
 
 const EMOJIS = ["🔥","🤡","👌","🍍","🙏","😇","💯"]
