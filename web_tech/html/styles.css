@@ -1,0 +1,153 @@
+@font-face {
+    font-family: "Big Blue Terminal";
+    font-style: normal;
+    src: url("./bigblue.ttf");
+}
+* {
+  font-family: "Big Blue Terminal";
+}
+html {
+  margin: 0;
+  padding: 0;
+  min-height: 100dvh;
+}
+body {
+  color: #afb;
+  text-shadow: 0 0 5px #7f8;
+  background: #19191f;
+  font-size: 12px;
+  margin: 0 auto 0 auto;
+  padding: 20px;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+fieldset {
+  border: 2px solid #cfe;
+}
+hr {
+  border: 1px solid #cfe;
+}
+hr, .section {
+  box-shadow: 0 0 4px #cfe, inset 0 0 4px #cfe;
+}
+a {
+  color: #cfe;
+  text-shadow: 0 0 8px #7f8;
+  transition: all 0.3s ease;
+  text-decoration: none;
+}
+a:not(:has(> img)):hover {
+  background: #7f8;
+  color: #59595f;
+  box-shadow: 0 0 5px #7f8;
+}
+a.warn {
+  color: #f99;
+  text-shadow: 0 0 8px #f77;
+}
+a.warn:not(:has(> img)):hover {
+  background: #f77;
+  color: #29292f;
+  box-shadow: 0 0 5px #f77;
+}
+a:not(:has(> img))::before {
+  content: "[";
+}
+a:not(:has(> img))::after {
+  content: "]";
+}
+a > img {
+  transition: all 0.3s ease;
+  filter: drop-shadow(0 0 2px #cfe) drop-shadow(0 0 4px #7f8a);
+}
+a:hover > img {
+  filter: drop-shadow(0 0 5px #cfe) drop-shadow(0 0 10px #7f8);
+}
+@keyframes gradient {
+  0% {
+    background-position-y: 0dvh;
+  }
+  100% {
+    background-position-y: 100dvh;
+  }
+}
+.background {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  background: linear-gradient(0deg, #19291f, #19191f);
+  animation: gradient 5s linear infinite;
+  will-change: contents, transform;
+}
+.logo {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: url("./moon.webp");
+  opacity: 0.18;
+  background-position: center;
+  background-size: 90vmin;
+  background-repeat: no-repeat;
+}
+.circle {
+  position: fixed;
+  translate: -50% -50%;
+  width: 50vmax;
+  height: 50vmax;
+  background: url("./circle.webp");
+  background-size: contain;
+}
+.scanlines {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: url("./scanlines.png");
+  pointer-events: none;
+}
+.section {
+  border: 2px #afb solid;
+  box-shadow: 0 0 4px #cfe, inset 0 0 4px #cfe;
+  margin: 10px;
+  padding: 16px;
+}
+.center {
+  text-align: center;
+}
+.moon_list {
+  overflow: auto;
+  max-height: 200px;
+  max-width: fit-content;
+}
+#nav_bar {
+  flex: 1;
+}
+#content {
+  flex: 2;
+}
+.section {
+  min-width: 0;
+}
+#nav_cont {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+@media (min-width: 900px) {
+  body {
+    max-width: 1200px;
+  }
+  #nav_cont {
+    flex-direction: row;
+  }
+}
