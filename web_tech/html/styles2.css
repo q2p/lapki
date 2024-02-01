@@ -1,0 +1,41 @@
+@font-face {
+    font-family: "comicsans";
+    font-style: normal;
+    src: url("./comicsans.ttf");
+}
+html {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font-size: 24px;
+  margin: 0 auto 0 auto;
+  padding: 20px;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  max-width: fit-content;
+}
+.background {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: -1;
+}
+.center {
+  text-align: center;
+}
+.particle {
+  position: fixed;
+  translate: -50% -50%;
+  font-size: 4em;
+}
+@keyframes spin {
+  from {
+      transform: rotate(0deg);
+  }
+  to {
+      transform: rotate(360deg);
+  }
+}
