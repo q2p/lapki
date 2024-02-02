@@ -2,20 +2,20 @@
 <html>
   <head>
     <title>Язык Rust</title>
-    <link href="./styles.css" rel="stylesheet">
+    <link href="index.css" rel="stylesheet">
   </head>
   <body>
     <div id="zagolovok" class="gruppa">
-      <h1><img src="./ferris1.svg" height=40> Язык Rust</h1>
+      <h1><img src="./krab1.svg" height=40> Язык Rust</h1>
     </div>
     <div class="gruppa">
       <h1>Главы</h1>
       <div id="ssilki">
-        <a href="./borrowing.html">1 - Владение.</a>
-        <a href="./enums.html">2 - Перечисления.</a>
+        <a href="./vladenie.html">1 - Владение.</a>
+        <a href="./perechisleniya.html">2 - Перечисления.</a>
         <a href="./match.html">3 - Управляющая конструкция match.</a>
-        <a href="./modules.html">4 - Пакеты, крейты и модули.</a>
-        <a href="./errors.html">5 - Обработка ошибок.</a>
+        <a href="./moduli.html">4 - Пакеты, крейты и модули.</a>
+        <a href="./oshibki.html">5 - Обработка ошибок.</a>
       </div>
       <h1>Прочее</h1>
       <div id="ssilki">
@@ -37,7 +37,7 @@
     </div>
     <div class="gruppa">
       <h1>Введение</h1>
-      <a href="https://doc.rust-lang.ru/book/" style="float:right"><img src="./ferris2.svg" width=80></a>
+      <a href="https://doc.rust-lang.ru/book/" style="float:right"><img src="./krab2.svg" width=80></a>
       <p>Добро пожаловать в <a href="https://doc.rust-lang.ru/book/">The Rust Programming Language</a>, вводную книгу о Rust. Язык программирования Rust помогает создавать быстрые, более надёжные приложения. Хорошая эргономика и низкоуровневый контроль часто являются противоречивыми требованиями для дизайна языков программирования; Rust бросает вызов этому конфликту. Благодаря сбалансированности мощных технических возможностей c большим удобством разработки, Rust предоставляет возможности управления низкоуровневыми элементами (например, использование памяти) без трудностей, традиционно связанных с таким контролем.</p>
 
       <h1>Кому подходит Rust</h1>
@@ -65,7 +65,7 @@
       <p>Rust предназначен для людей, которые хотят развивать язык программирования Rust, сообщество, инструменты для разработчиков и библиотеки. Мы будем рады, если вы внесёте свой вклад в развитие языка Rust.</p>
 
       <h1>Люди, ценящие скорость и стабильность</h1>
-      <a href="https://doc.rust-lang.ru/book/" style="float:left"><img src="./ferris3.svg" width=80></a>
+      <a href="https://doc.rust-lang.ru/book/" style="float:left"><img src="./krab3.svg" width=80></a>
       <p>Rust предназначен для любителей скорости и стабильности в языке. Под скоростью мы подразумеваем как быстродействие программы на Rust, так и быстроту, с которой Rust позволяет писать программы. Проверки компилятора Rust обеспечивают стабильность за счёт функциональных дополнений и рефакторинга. Это выгодно отличается от хрупкого унаследованного кода в языках без таких проверок, который разработчики часто боятся изменять. Благодаря обеспечению абстракций с нулевой стоимостью, высокоуровневых возможностей, компилируемых в низкоуровневый код такой же быстрый, как и написанный вручную, Rust стремится сделать безопасный код ещё и быстрым.</p>
 
       <p>Язык Rust надеется поддержать и многих других пользователей; перечисленные здесь - лишь самые значимые заинтересованные лица. В целом, главная цель Rust - избавиться от компромиссов, на которые программисты шли десятилетиями, обеспечив безопасность и производительность, скорость и эргономичность. Попробуйте Rust и убедитесь, подойдут ли вам его решения.</p>
@@ -77,64 +77,42 @@
         <area shape="poly" coords="130,147,130,228,6,219,59,107" href="https://developer.mozilla.org/docs/Web/CSS" target="_blank" alt="CSS"/>
         <area shape="poly" coords="130,147,200,107,130,4,59,107" href="https://developer.mozilla.org/docs/Web/JavaScript" target="_blank" alt="JavaScript"/>
       </map>
-      <img usemap="#infographic" src="https://interactive-examples.mdn.mozilla.net/media/examples/mdn-info2.png" alt="MDN infographic"/>
+      <img usemap="#infographic" src="https://interactive-examples.mdn.mozilla.net/media/examples/mdn-info2.png" alt="MDN infographic" height="230"/>
     </div>
     <div class="gruppa">
       <h1>Подписаться на рассылку</h1>
       <form>
-        <legend>Choose your favorite monster</legend>
-        <label>Ваше ФИО</label><br>
-        <input placeholder="Введите ФИО..."><br>
-        <label>Пароль от вашего интернет-банка</label><br>
-        <input type="password" placeholder="Введите пароль..."><br>
-        <label>Паспортные данные</label><br>
-        <textarea placeholder="Серия, номер, прописка..."></textarea><br>
-        <button>Кнпчк.</button><br>
-        <legend>Ваш любимый переключатель</legend>
-        <input type="radio" value="K">
-        <label>Этот</label><br>
-        <input type="radio" value="S">
-        <label>Может этот?</label><br>
-        <input type="radio" value="M">
-        <label>Всё-таки наверное вот этот</label>
-        <input type="checkbox" value="K">
-        <label>Этот выглядит прикольно.</label><br>
-        <input type="checkbox" value="S">
-        <label>Но этот какой-то более уверенный, харизматичный флажок.</label><br>
-        <input type="checkbox" value="M">
-        <label>Три, да три, да три. Что будет?</label>
-        <input type="hidden" value="Заполни меня программно">
-        <label>Выпадающий список</label><br>
-        <select>
-          <option value="volvo">Адин</option>
-          <option value="saab">Дыва</option>
-          <option value="mercedes">Тры</option>
-          <option value="audi">Четыр</option>
+        <label>Адрес: </label><input type="text" name="adres"><br>
+        <label>Пароль: </label><input type="password" name="parol"><br>
+        <label>Зона текста: </label><textarea name="tekst"></textarea><br>
+        <label>Кнопка: </label><button name="knopka">Подтвердить</button><br>
+        <label>Частота рассылки: </label>
+        <input type="radio" name="chastota" value="nedelya"><label>Раз в неделю.</label>
+        <input type="radio" name="chastota" value="mesyac"><label>Раз в месяц.</label><br>
+        <label>Тип рассылки: </label>
+        <input type="checkbox" name="novosti"><label>Новости.</label>
+        <input type="checkbox" name="obnovleniya"><label>Обновления.</label>
+        <input type="checkbox" name="recommendacii"><label>Рекоммендации.</label><br>
+        <label>Невидимый ввод: </label><input type="hidden" name="nevidimiy"><br>
+        <label>Оценка: </label>
+        <select name="ocenka">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
         </select><br>
-        <label>Кнопка с картинкой</label><br>
-        <input type="image" src="https://interactive-examples.mdn.mozilla.net/media/examples/login-button.png"><br>
-        <label>Загрузите ваше фото</label><br>
-        <input type="file"><br>
-        <label>Укажите ваш email</label><br>
-        <input type="email" placeholder="...@example.com" pattern=".+@example\.com" required><br>
-        <label>Ссылка на ваш профиль в социальной сети</label><br>
-        <input type="url" placeholder="Введите URL"><br>
-        <label>Ваш любимый цвет</label><br>
-        <input type="color" value="#e66465"><br>
-        <label>Если вы фрезировщик, укажите число пальцев на руках и ногах</label><br>
-        <input type="number" min="0" max="19"><br>
-        <label>Ползунок (Ползёт)</label><br>
-        <input type="range" min="0" max="100" value="90" step="10"><br>
-        <label>Ваш любимый день</label><br>
-        <input type="date"><br>
-        <label>Ваш любимый день и час</label><br>
-        <input type="datetime-local"><br>
-        <label>Что бы вы хотели видеть на кружке?</label><br>
-        <input type="search"><br>
-        <label>Контактный номер телефона</label><br>
-        <input type="tel" disabled>
-        <br>
-        <input type="submit" value="Отправить">
+        <label>Подтверждение: </label><input type="image" src="knopka.png" height=40><br>
+        <label>Загрузка файла: </label><input type="file" name="file"><br>
+        <label>Электронная почта: </label><input type="email" name="pochta"><br>
+        <label>Ссылка на почту: </label><input type="url" name="ssilka"><br>
+        <label>Цвет: </label><input type="color" name="tsvet"><br>
+        <label>Число: </label><input type="number" name="chislo"><br>
+        <label>Ползунок: </label><input type="range" name="polzunok"><br>
+        <label>Дата регистрации: </label><input type="date" name="data"><br>
+        <label>Время регистрации: </label><input type="datetime-local" name="vremya"><br>
+        <label>Поиск: </label><input type="search" name="poisk"><br>
+        <label>Номер телефона: </label><input type="tel" name="telefon">
       </form>
     </div>
     <div class="gruppa">
