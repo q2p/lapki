@@ -2,8 +2,6 @@ html {
   background: lightgray;
 }
 body {
-  margin: 0 auto 0 auto;
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
@@ -45,5 +43,6 @@ code {
   }
   body {
     width: 800px;
+    margin: auto;
   }
 }
