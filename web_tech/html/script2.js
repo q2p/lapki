@@ -29,7 +29,7 @@ class Particle {
     this.el.textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)]
     back.appendChild(this.el)
     RAD = 4 * this.el.clientHeight
-    this.el.style.animation = `spin ${rand(1, 3).toFixed(2)}s infinite linear`
+    this.el.style.animation = `spin ${rand(1, 3).toFixed(2)}s infinite linear ${this.dx > 0 ? "normal" : "reverse"}`
   }
   update(delta) {
     this.dy -= delta * H * 0.8
@@ -37,7 +37,7 @@ class Particle {
     this.y += this.dy * delta
     this.el.style.bottom = `${this.y}px`
     this.el.style.left = `${this.x}px`
-    return this.y < -2 * RAD
+    return this.y < -2 * RAD || (this.dx < 0 && this.x < -RAD) || (this.dx > 0 && this.x > W+RAD)
   }
 }
 
@@ -48,7 +48,7 @@ function raf() {
   const now = new Date().getTime() * 0.001
   const delta = now - prev
   prev = now
-  if (particles.length < 40 && now - last > 0.2) {
+  if (particles.length < 128 && now - last > 0.2) {
     particles.push(new Particle())
     last = now
   }
