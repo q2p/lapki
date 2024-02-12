@@ -1,0 +1,48 @@
+html {
+  background: lightgray;
+}
+body {
+  display: flex;
+  flex-direction: column;
+}
+.gruppa {
+  border-radius: 20px;
+  background: white;
+  margin: 10px;
+  padding: 20px;
+}
+#ssilki > * {
+  display: block;
+}
+h2 {
+  font-family: Times New Roman;
+  color: blue;
+}
+h3 {
+  font-family: sans-serif;
+  color: red;
+}
+h4 {
+  font-family: Consolas;
+  color: green;
+}
+h5 {
+  font-family: monospace;
+  color: orange;
+}
+h6 {
+  font-family: Courier New;
+  color: cyan;
+}
+code {
+  white-space: pre;
+}
+@media (min-width: 800px) {
+  #ssilki * {
+    display: inline-block;
+  }
+  body {
+    width: 800px;
+    margin: auto;
+  }
+}

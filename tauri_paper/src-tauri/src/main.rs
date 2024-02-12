@@ -97,8 +97,12 @@ fn app_menu() -> Menu {
 }
 
 fn main() {
-    // room_state::load_config("dasdfsadsad");
-    load_app_config();
+  load_app_config();
+  tauri::Builder::default()
+    .setup(|app| {
+      tauri::async_runtime::spawn(async move { random_tries::do_montecarlo().await });
+      Ok(())
+    })
 
     tauri::Builder::default()
         // .on_page_load(|window, _payload| {

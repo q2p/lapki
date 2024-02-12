@@ -5,7 +5,8 @@ use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, dbm_after_walls, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
+use crate::geometry::line_intersection;
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -13,6 +14,7 @@ pub struct RoomState2 {
   pub points_signal_dbm: Vec<f64>,
 }
 
+#[derive(Debug)]
 struct ParamRanges {
   /// mw min, max
   pub points_limits_mws: Vec<(f64, f64)>,
@@ -41,7 +43,7 @@ fn solve_slice(bb: &BoundingBoxes, this_guess: &RoomState2, regular_state: &Room
       let mwts: Vec<f64> = regular_state.radio_points
         .iter()
         .zip(this_guess.points_signal_dbm.iter())
-        .map(|(point, power_dbm)| mw_after_walls(&regular_state, pix, point, *power_dbm))
+        .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
         .collect();
 
       let signal_mw = mwts[desired_point_id];
@@ -93,15 +95,19 @@ pub async fn do_montecarlo() {
   // let state = Arc::new(crate::room_state::get_config());
   let state = Arc::new(crate::room_state::get_config2());
 
-  let limits = Arc::new(ParamRanges {
-    points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
-  });
+  let limits = ParamRanges {
+    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
+  };
+
+  println!("{:?}", limits);
+
+  let mut rng = rand::rngs::StdRng::from_entropy();
 
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
   let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
 
-  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 512*512));
+  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
   let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
   // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
   // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
@@ -168,9 +174,9 @@ pub async fn do_montecarlo() {
         //   super_uper_min = min_sinr_dbm;
         //   println!("min_sinr: {min_sinr_dbm}dbm");
         // }
-        if !f64::is_finite(min_sinr_dbm) || min_sinr_dbm < -4.0 {
-          continue 'monte_carlo;
-        }
+        // if !f64::is_finite(min_sinr_dbm) || min_sinr_dbm < -4.0 {
+        //   continue 'monte_carlo;
+        // }
         if f64::is_finite(sinr_avg) && sinr_avg > local_max_sinr {
           local_max_sinr = sinr_avg;
           let mut gms = global_max_sinr.lock().unwrap();
@@ -183,6 +189,37 @@ pub async fn do_montecarlo() {
         }
       }
     });
+
+    // TODO: map size должен включать все стены.
+    let mut left_to_solve = Vec::new();
+    for (y_from, y_to, _) in chop_ys(measure.res.1, 1) {
+      let next_guess = next_guess.clone();
+      let state = state.clone();
+      let measure = measure.clone();
+      left_to_solve.push(tokio::spawn(async move {
+        solve_slice(&*measure, y_from, y_to, &*next_guess, &*state)
+      }));
+    }
+    let mut signal_mw = 0f64;
+    let mut noise_mw = 0f64;
+    for i in left_to_solve {
+      let (s, n, min_sinr_dbm) = i.await.unwrap();
+      signal_mw += s;
+      noise_mw += n;
+      if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
+        super_uper_min = min_sinr_dbm;
+        println!("min_sinr: {min_sinr_dbm}dbm");
+      }
+      // if min_sinr_dbm < -5.0 {
+      //   continue 'monte_carlo;
+      // }
+    }
+    let sinr_avg = signal_mw / noise_mw;
+    if sinr_avg > max_sinr {
+      max_sinr = sinr_avg;
+      println!("min_sinr_sum: {}mw", sinr_avg);
+      best_tx.send(Some(next_guess)).unwrap();
+    }
   }
 }
 
