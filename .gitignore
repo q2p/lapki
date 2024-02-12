@@ -1,2 +1,5 @@
 *.out
 *.exe
+target
+.vscode/*
+.idea/*
