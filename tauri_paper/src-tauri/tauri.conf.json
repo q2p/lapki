@@ -36,6 +36,9 @@
         "exit": true,
         "relaunch": false,
         "relaunchDangerousAllowSymlinkMacos": false
+      },
+      "globalShortcut": {
+        "all": true
       }
     },
     "bundle": {

@@ -12,7 +12,7 @@ use random_tries::do_montecarlo;
 use serde::{Deserialize, Serialize};
 use tauri::api::notification::Notification;
 use tauri::async_runtime::{handle, JoinHandle};
-use tauri::{Manager, App};
+use tauri::{App, CustomMenuItem, Manager, Menu, MenuEntry, MenuItem, Submenu};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, sleep_until};
 use tokio_util::sync::CancellationToken;
@@ -69,9 +69,37 @@ fn write_app_config(app_config: AppConfig) {
     _write_app_config(app_config);
 }
 
+fn app_menu() -> Menu {
+    Menu::with_items([
+        MenuEntry::Submenu(Submenu::new(
+            "File",
+            Menu::with_items([
+                CustomMenuItem::new("new", "New")
+                    .accelerator("CmdOrCtrl+N")
+                    .into(),
+                CustomMenuItem::new("open", "Open")
+                    .accelerator("CmdOrCtrl+O")
+                    .into(),
+                CustomMenuItem::new("save", "Save")
+                    .accelerator("CmdOrCtrl+S")
+                    .into(),
+                MenuItem::Separator.into(),
+                CustomMenuItem::new("quit", "Quit")
+                    .accelerator("CmdOrCtrl+Q")
+                    .into(),
+            ]),
+        )),
+        MenuEntry::Submenu(Submenu::new(
+            "Tools",
+            Menu::with_items([CustomMenuItem::new("wall", "Wall").accelerator("W").into()]),
+        )),
+    ])
+}
+
 fn main() {
     // room_state::load_config("dasdfsadsad");
     load_app_config();
+
     tauri::Builder::default()
         // .on_page_load(|window, _payload| {
         //   let payload = BootPayload { drives: scan_drive() };
@@ -79,6 +107,34 @@ fn main() {
         //     .emit("boot", Some(payload))
         //     .expect("failed to emit event");
         // })
+        .menu(app_menu())
+        .on_menu_event(|event| {
+            let app_handle = event.window().app_handle();
+            match event.menu_item_id() {
+                "new" => {
+                    app_handle
+                    .emit_all("new", ())
+                    .expect("Failed to send event");
+                },
+                "open" => {
+                    app_handle
+                        .emit_all("open", ())
+                        .expect("Failed to send event");
+                }
+                "save" => {
+                    app_handle
+                        .emit_all("save", ())
+                        .expect("Failed to send event");
+                }
+                "wall" => {
+                    app_handle
+                        .emit_all("wall", ())
+                        .expect("Failed to send event");
+                }
+                "quit" => std::process::exit(0),
+                _ => {}
+            }
+        })
         .on_page_load(|window, payload| {})
         .setup(|app| {
             let product_name = app.config().package.product_name.clone().unwrap();

@@ -1,96 +1,47 @@
 import { emit, listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/tauri";
 import { open, save as save_dialog } from '@tauri-apps/api/dialog';
-import { WebviewWindow } from '@tauri-apps/api/window';
 import { appWindow } from '@tauri-apps/api/window';
 import { dialog } from "@tauri-apps/api";
 import { TauriEvent } from "@tauri-apps/api/event"
-import { exit } from "@tauri-apps/api/process";
+import { ActiveBest, AppConfig, AppState, Config, DrawingState, Point2d, StoredBest, Wall } from "./types";
+import { get_active_best, get_app_config, get_config, write_app_config } from "./api";
+import { quit, save } from "./actions";
+import { registerGlobalListeners } from "./listeners";
+import { registerGlobalShortcuts } from "./shortcuts";
 
 const style = (node, styles) =>
   Object.keys(styles).forEach((key) => (node.style[key] = styles[key]));
 
-type AppConfig = {
-  latest_config?: string
+// let app_config: AppConfig = await get_app_config()
+// let config: Config
+// let config_path: string
+// let changes: boolean = false
+let app_state = <AppState> {
+  app_config: await get_app_config(),
+  changes: false
 }
 
-type Config = {
-  walls: Wall[];
-  radio_points: RadioPoint[];
-  radio_zones: RadioZone[];
-};
+// let drawing: boolean = false;
+// let mevent: MouseEvent;
+// let drawing_last_point: Point2d | null = null;
+// let drawing_point: Point2d | null = null;
+// let added_walls: Wall[] = [];
+let drawing_state = <DrawingState>{
+  drawing: false,
+  drawing_last_point: null,
+  drawing_point: null,
+}
+drawing_state.added_walls = []
 
-type Wall = {
-  a: Point2d;
-  b: Point2d;
-  damping: number;
-};
-
-type RadioPoint = {
-  pos: Point2d;
-  power: number;
-};
-
-type RadioZone = {
-  points: Point2d[];
-  r: number;
-  g: number;
-  b: number;
-};
-
-type Point2d = {
-  x: number;
-  y: number;
-};
-
-type ActiveBest = {
-  point_x: number;
-  point_y: number;
-  point_pow_mw: number;
-  min_sinr_dbm: number;
-  min_sinr_x: number;
-  min_sinr_y: number;
-  r: number;
-  g: number;
-  b: number;
-};
-
-class StoredBest {
-  constructor(
-    readonly x: number,
-    readonly y: number,
-    readonly tooltip: HTMLDivElement,
-    readonly circle: HTMLDivElement
-  ) { }
+if (app_state.app_config.latest_config) {
+  app_state.config_path = app_state.app_config.latest_config
+  app_state.config = await get_config(app_state.config_path)
+  appWindow.setTitle("[" + app_state.config_path.split('\\').pop() + "] – " + "5G Planner ")
 }
 
-async function get_config(path: string): Promise<Config> {
-  return (await invoke("get_config", { path: path })) as Config;
-}
-
-async function get_app_config(): Promise<AppConfig> {
-  return (await invoke("get_app_config")) as AppConfig
-}
-
-async function write_app_config(app_config: AppConfig) {
-  await invoke("write_app_config", {appConfig: app_config})
-}
-
-async function get_active_best(): Promise<ActiveBest[]> {
-  return (await invoke("get_active_best")) as ActiveBest[];
-}
-
-// let config: Config = await get_config();
-let app_config: AppConfig = await get_app_config()
-let config: Config
-let config_path: string
-let changes: boolean = false
-
-if (app_config.latest_config) {
-  config_path = app_config.latest_config
-  config = await get_config(config_path)
-  appWindow.setTitle("5G Planner " + config_path)
-}
+registerGlobalListeners(app_state, drawing_state)
+registerGlobalShortcuts(app_state, drawing_state)
 
 // rimg meters
 const rimg_xmin = 5;
@@ -107,16 +58,6 @@ let cursor_x_m = 0;
 let cursor_y_m = 0;
 let cursor_x_p = 0;
 let cursor_y_p = 0;
-
-//b egorkasprigorca
-let drawing: boolean = false;
-let mevent: MouseEvent;
-let drawing_last_point: Point2d | null = null;
-let drawing_point: Point2d | null = null;
-
-let added_walls: Wall[] = [];
-
-//e
 
 const canvas = document.createElement("canvas");
 document.body.appendChild(canvas);
@@ -150,7 +91,7 @@ window.addEventListener("mousemove", function (e) {
   cursor_x_m = camX + (cursor_x_p - canvas.width / 2) / zoom;
   cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom;
 
-  mevent = e;
+  drawing_state.mevent = e;
 });
 
 let anchor_x_m = 0;
@@ -164,9 +105,9 @@ window.addEventListener("mousedown", function (e) {
   cursor_y_p = e.clientY;
   cursor_x_m = camX + (cursor_x_p - canvas.width / 2) / zoom;
   cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom;
-  if (drawing) {
+  if (drawing_state.drawing) {
     drawing_pressed = true;
-    drawing_last_point = {
+    drawing_state.drawing_last_point = {
       x: cursor_x_m,
       y: cursor_y_m,
     };
@@ -182,32 +123,32 @@ window.addEventListener("mouseup", function (e) {
   cursor_y_p = e.clientY;
   cursor_x_m = camX + (cursor_x_p - canvas.width / 2) / zoom;
   cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom;
-  if (drawing) {
+  if (drawing_state.drawing) {
     if (
-      drawing_last_point &&
-      drawing_point &&
-      Math.abs(cursor_x_m - drawing_last_point.x) <= 0.9 &&
-      Math.abs(cursor_y_m - drawing_last_point.y) <= 0.9
+      drawing_state.drawing_last_point &&
+      drawing_state.drawing_point &&
+      Math.abs(cursor_x_m - drawing_state.drawing_last_point.x) <= 0.9 &&
+      Math.abs(cursor_y_m - drawing_state.drawing_last_point.y) <= 0.9
     ) {
       drawing_pressed = false;
-      drawing_last_point = null;
+      drawing_state.drawing_last_point = null;
     } else {
       drawing_pressed = false;
-      drawing_point = {
+      drawing_state.drawing_point = {
         x: cursor_x_m,
         y: cursor_y_m,
       };
       const wall: Wall = {
-        a: drawing_last_point!,
-        b: drawing_point!,
-        damping: 500, //change me
+        a: drawing_state.drawing_last_point!,
+        b: drawing_state.drawing_point!,
+        damping: 500, //fix me
       };
-      added_walls.push(wall);
-      changes = true;
-      if (config_path) {
-        appWindow.setTitle("5G Planner " + config_path + " *")
+      drawing_state.added_walls.push(wall);
+      app_state.changes = true;
+      if (app_state.config_path) {
+        appWindow.setTitle("[" + app_state.config_path.split('\\').pop() + "*] – " + "5G Planner ")
       } else {
-        appWindow.setTitle("5G Planner " + "*")
+        appWindow.setTitle("[Untitled"+"*"+"]" + "– 5G Planner")
       }
     }
   } else {
@@ -334,7 +275,7 @@ function legend(offsetX: number, offsetY: number) {
 }
 
 function zc(i: number) {
-  const z = config.radio_zones[i];
+  const z = app_state.config.radio_zones[i];
   return ac(z.r, z.g, z.b);
 }
 
@@ -438,7 +379,7 @@ function raf() {
   ctx.strokeStyle = "#000";
   ctx.fillStyle = "#000";
   ctx.beginPath();
-  for (const w of config.walls) {
+  for (const w of app_state.config.walls) {
     const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom);
     const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom);
     const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom);
@@ -488,59 +429,6 @@ function resize() {
   canvas.height = window.innerHeight;
 }
 
-const unlisten = await listen('notification', (event) => {
-  dialog.message(event.payload.message, { type: "info" })
-})
-
-appWindow.listen(TauriEvent.WINDOW_CLOSE_REQUESTED, async () => {
-  console.log("close req")
-  if (changes) {
-    if (config_path) {
-      let result = await dialog.confirm("There are unsaved changes to " + config_path.split("/").pop(), { title: 'Do you want to save your work', type: "warning" })
-      if (!result) {
-        return;
-      } else {
-        config.walls = [...config.walls, ...added_walls]
-        await invoke('save_config', { config: config, path: config_path })
-      }
-      app_config.latest_config = config_path;
-      await write_app_config(app_config)
-    } else {
-      let result = await dialog.confirm("There are unsaved changes to Untitled", { title: 'Do you want to save your work', type: "warning" })
-      if (!result) {
-        return;
-      } else {
-        config = <Config>{
-          walls: added_walls,
-          radio_points: [],
-          radio_zones: []
-        }
-        const filePath = await save_dialog({
-          filters: [{
-            name: 'Config',
-            extensions: ['json']
-          }],
-          title: 'Choice file to save your work to'
-        });
-        if (!filePath) {
-          return;
-        }
-        await invoke('save_config', { config: config, path: filePath })
-        app_config.latest_config = filePath;
-        await write_app_config(app_config)
-      }
-    }
-  } else {
-    if (config_path) {
-      app_config.latest_config = config_path;
-      console.log(app_config)
-      await write_app_config(app_config)
-    }
-  }
-
-  await exit(1);
-})
-
 const container = document.createElement("div")
 style(container, {
   position: "absolute",
@@ -553,10 +441,10 @@ const tools = document.createElement("div");
 tools.classList.add("menu-item")
 tools.innerText = "Tools";
 tools.addEventListener("click", (e) => {
-  if (drawing) {
-    drawing = false;
+  if (drawing_state.drawing) {
+    drawing_state.drawing = false;
   } else {
-    drawing = true;
+    drawing_state.drawing = true;
   }
 });
 const load = document.createElement("div")
@@ -570,35 +458,11 @@ load.addEventListener("click", async (e) => {
       extensions: ['json']
     }]
   });
-  config_path = selected
-  config = await get_config(config_path)
-  await appWindow.setTitle("5G Planner " + selected)
+  app_state.config_path = selected
+  app_state.config = await get_config(app_state.config_path)
+  await appWindow.setTitle("[" + app_state.config_path.split('\\').pop() + "] – " + "5G Planner ")
 })
-const save = document.createElement("div")
-save.classList.add("menu-item")
-save.innerText = "Save";
-save.addEventListener("click", async (e) => {
-  if (config_path) {
-    config.walls = [...config.walls, ...added_walls]
-  } else {
-    //fix me
-    config = <Config>{
-      walls: added_walls,
-      radio_points: [],
-      radio_zones: []
-    }
-    const filePath = await save_dialog({
-      filters: [{
-        name: 'Config',
-        extensions: ['json']
-      }]
-    });
-    config_path = filePath
-  }
-  changes = false
-  invoke('save_config', { config: config, path: config_path })
-  appWindow.setTitle("5G Planner " + config_path)
-});
+
 const run = document.createElement("div")
 run.classList.add("menu-item")
 run.innerText = "Run";
@@ -613,7 +477,6 @@ stop.addEventListener("click", (e) => {
 });
 container.appendChild(tools)
 container.appendChild(load)
-container.appendChild(save)
 container.appendChild(run)
 container.appendChild(stop)
 // canvas.addEventListener('mousemove', (e) => {
@@ -632,7 +495,7 @@ container.appendChild(stop)
 //     prev = coord;
 //   }
 // })
-document.body.appendChild(container);
+// document.body.appendChild(container);
 
 export function raf2() {
   requestAnimationFrame(raf2);
@@ -664,12 +527,12 @@ export function raf2() {
     grid(offsetX, offsetY, zoom, 0.7);
   }
 
-  if (config !== undefined) {
+  if (app_state.config !== undefined) {
     ctx.lineWidth = wall_thickness
     ctx.strokeStyle = "#000";
     ctx.fillStyle = "#000"
     ctx.beginPath();
-    for (const w of config.walls) {
+    for (const w of app_state.config.walls) {
       const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
       const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
       const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
@@ -687,11 +550,11 @@ export function raf2() {
     ctx.stroke();
   }
 
-  if (added_walls.length > 0) {
+  if (drawing_state.added_walls.length > 0) {
     ctx.lineWidth = wall_thickness;
     ctx.strokeStyle = "#000";
     ctx.fillStyle = "#000";
-    for (const w of added_walls) {
+    for (const w of drawing_state.added_walls) {
       const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom);
       const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom);
       const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom);
@@ -705,21 +568,21 @@ export function raf2() {
     }
   }
 
-  if (drawing) {
+  if (drawing_state.drawing) {
     ctx.strokeStyle = "#000";
     ctx.fillStyle = "#000";
     ctx.beginPath();
     ctx.fillRect(
-      mevent.clientX - wall_thickness / 2,
-      mevent.clientY - wall_thickness / 2,
+      drawing_state.mevent.clientX - wall_thickness / 2,
+      drawing_state.mevent.clientY - wall_thickness / 2,
       wall_thickness,
       wall_thickness
     );
     ctx.stroke();
 
-    if (drawing_last_point) {
-      const x = Math.round((drawing_last_point.x - offsetX) * zoom);
-      const y = Math.round((drawing_last_point.y - offsetY) * zoom);
+    if (drawing_state.drawing_last_point) {
+      const x = Math.round((drawing_state.drawing_last_point.x - offsetX) * zoom);
+      const y = Math.round((drawing_state.drawing_last_point.y - offsetY) * zoom);
       ctx.strokeStyle = "#000";
       ctx.fillStyle = "#000";
       ctx.beginPath();
@@ -730,9 +593,9 @@ export function raf2() {
         wall_thickness
       );
       ctx.stroke();
-      if (drawing_point) {
-        const x = Math.round((drawing_point.x - offsetX) * zoom);
-        const y = Math.round((drawing_point.y - offsetY) * zoom);
+      if (drawing_state.drawing_point) {
+        const x = Math.round((drawing_state.drawing_point.x - offsetX) * zoom);
+        const y = Math.round((drawing_state.drawing_point.y - offsetY) * zoom);
         ctx.strokeStyle = "#000";
         ctx.fillStyle = "#000";
         ctx.beginPath();
@@ -750,10 +613,10 @@ export function raf2() {
         ctx.fillStyle = "#000";
         ctx.beginPath();
         ctx.moveTo(
-          (drawing_last_point.x - offsetX) * zoom,
-          (drawing_last_point.y - offsetY) * zoom
+          (drawing_state.drawing_last_point.x - offsetX) * zoom,
+          (drawing_state.drawing_last_point.y - offsetY) * zoom
         );
-        ctx.lineTo(mevent.offsetX, mevent.offsetY);
+        ctx.lineTo(drawing_state.mevent.offsetX, drawing_state.mevent.offsetY);
         ctx.stroke();
       }
     }

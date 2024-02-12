@@ -19,7 +19,7 @@ debug = false
 tauri-build = { version = "1.4", features = [] }
 
 [dependencies]
-tauri = { version = "1.4", features = [ "process-exit", "window-set-title", "dialog-confirm", "dialog-save", "dialog-ask", "dialog-open", "dialog-message", "notification-all", "shell-open"] }
+tauri = { version = "1.4", features = [ "global-shortcut-all", "process-exit", "window-set-title", "dialog-confirm", "dialog-save", "dialog-ask", "dialog-open", "dialog-message", "notification-all", "shell-open"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 png = "0.17.9"
