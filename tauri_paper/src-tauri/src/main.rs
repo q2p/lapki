@@ -5,17 +5,11 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::thread;
 use std::time::Duration;
 
 use random_tries::do_montecarlo;
 use serde::{Deserialize, Serialize};
-use tauri::api::notification::Notification;
-use tauri::async_runtime::{handle, JoinHandle};
-use tauri::{App, CustomMenuItem, Manager, Menu, MenuEntry, MenuItem, Submenu};
-use tokio::sync::mpsc;
-use tokio::time::{sleep, sleep_until};
-use tokio_util::sync::CancellationToken;
+use tauri::{CustomMenuItem, Manager, Menu, MenuEntry, MenuItem, Submenu};
 
 mod geometry;
 mod heatmap;
@@ -98,12 +92,6 @@ fn app_menu() -> Menu {
 
 fn main() {
   load_app_config();
-  tauri::Builder::default()
-    .setup(|app| {
-      tauri::async_runtime::spawn(async move { random_tries::do_montecarlo().await });
-      Ok(())
-    })
-
     tauri::Builder::default()
         // .on_page_load(|window, _payload| {
         //   let payload = BootPayload { drives: scan_drive() };

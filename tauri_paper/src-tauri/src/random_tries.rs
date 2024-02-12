@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, dbm_after_walls, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
-use crate::geometry::line_intersection;
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -95,9 +94,9 @@ pub async fn do_montecarlo() {
   // let state = Arc::new(crate::room_state::get_config());
   let state = Arc::new(crate::room_state::get_config2());
 
-  let limits = ParamRanges {
-    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
-  };
+  let limits = Arc::new(ParamRanges {
+    points_limits_mws: state.radio_points.iter().map(|p| (0.0, p.padwer_max_mw)).collect(),
+  });
 
   println!("{:?}", limits);
 
