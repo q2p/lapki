@@ -5,8 +5,7 @@ use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
 
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, length, dbm_after_walls, mw_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
-use crate::geometry::line_intersection;
+use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
 
 pub struct RoomState2 {
@@ -20,12 +19,12 @@ struct ParamRanges {
   pub points_limits_mws: Vec<(f64, f64)>,
 }
 
-fn solve_slice(bb: &BoundingBoxes, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
+fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
   let mut signal_t = 0f64;
   let mut noise_t = 0f64;
   let mut min_sinr = f64::MAX;
 
-  for y in 0..bb.res.1 {
+  for y in y_from..y_to {
     for x in 0..bb.res.0 {
       let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
@@ -95,9 +94,9 @@ pub async fn do_montecarlo() {
   // let state = Arc::new(crate::room_state::get_config());
   let state = Arc::new(crate::room_state::get_config2());
 
-  let limits = ParamRanges {
-    points_limits_dbm: state.radio_points.iter().map(|p| mw_to_dbm(p.power_max_mw)).collect(),
-  };
+  let limits = Arc::new(ParamRanges {
+    points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
+  });
 
   println!("{:?}", limits);
 
@@ -169,7 +168,7 @@ pub async fn do_montecarlo() {
           // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| mw_to_dbm(190f64)).collect(),
         };
 
-        let (sinr_avg, min_sinr_dbm) = solve_slice(&*measure, &next_guess, &state);
+        let (sinr_avg, min_sinr_dbm) = solve_slice(&*measure, 0, measure.res.1, &next_guess, &state);
         // if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
         //   super_uper_min = min_sinr_dbm;
         //   println!("min_sinr: {min_sinr_dbm}dbm");

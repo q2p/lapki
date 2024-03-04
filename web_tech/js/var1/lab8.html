@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    table, th, td {
+      border:1px solid black;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <input onclick="makeTable()" id = "N_size" type = "number" value = "0" step = 1 min="0">
+  <input onclick="makeTable()" id = "M_size" type = "number" value = "0" step = 1 min="0">
+  <table style="width: 60%"></table>
+  <p>Разность между максимальным и минимальным элементами матрицы</p>
+  <p id = "res"></p>
+</body>
+
+<script src="lab8.js"></script>

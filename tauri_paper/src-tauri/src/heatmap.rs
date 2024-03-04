@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use rand::Rng;
 
-use crate::geometry::line_intersection;
 use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
 use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint, Range, RANGE};
 
@@ -187,8 +186,8 @@ const DBMAX: f64 = 0.368;
 // в другую величину, которая более линейна, чтобы цвета были расположены
 // более равномерно
 const DBPOW: f64 = 16.0;
-fn scale_dbs(dBm: f64, range: &Range) -> f64 {
-  scale_dbs2(dBm, range.min, range.max, range.pow)
+fn scale_dbs(dbm: f64, range: &Range) -> f64 {
+  scale_dbs2(dbm, range.min, range.max, range.pow)
 }
 fn scale_dbs2(v: f64, min: f64, max: f64, pow: f64) -> f64 {
   ((v - min) / (max - min)).clamp(0.0, 1.0).powf(pow)
@@ -438,7 +437,7 @@ pub async fn do_image2(
           // Рассматриваем каждую точку доступа
           let dbms = calc_powers_dbm(&regular_state, &next_guess, pix);
 
-          for (zone, (min, max)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
+          for (zone, (min, max, min_xy)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
             //if is_inside(pix, zone) {
               let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
 
@@ -644,49 +643,6 @@ pub fn pix_to_meter(bb: &BoundingBoxes, p: Px) -> Pos {
   )
 }
 
-fn paint_walls(bb: &BoundingBoxes, regular_state: &RoomState, scene: &mut [u8]) {
-  // Рисуем стены поверх изображения интенсивностей
-  for w in &regular_state.walls {
-    let a = meter_to_pix(bb, w.a);
-    let b = meter_to_pix(bb, w.b);
-    let ax = a.x as isize;
-    let ay = a.y as isize;
-    let bx = b.x as isize;
-    let by = b.y as isize;
-    // tline(&mut state.scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00, 4);
-    dline(bb.res.0, scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00);
-    // bline(&mut state.scene, Px::new(ax, ay), Px::new(bx, by), 0x00, 0x00, 0x00);
-  }
-}
-
-fn dline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
-  bline(width, dest, Px::new(p0.x, p0.y), Px::new(p1.x, p1.y), r, g, b);
-  bline(width, dest, Px::new(p0.x, p0.y - 1), Px::new(p1.x, p1.y - 1), r, g, b);
-  bline(width, dest, Px::new(p0.x, p0.y + 1), Px::new(p1.x, p1.y + 1), r, g, b);
-  bline(width, dest, Px::new(p0.x - 1, p0.y), Px::new(p1.x - 1, p1.y), r, g ,b);
-  bline(width, dest, Px::new(p0.x + 1, p0.y), Px::new(p1.x + 1, p1.y), r, g ,b);
-}
-
-
-fn tline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8, thickness: u8) {
-  bline(width, dest, p0, p1, r, g, b);
-  let dy = (p1.y - p0.y).abs();
-  let dx = (p1.x - p0.x).abs();
-  let wz = (thickness - 1) as isize * ((dx * dx + dy * dy) as f64).sqrt() as isize;
-  if dx > dy {
-    let wy = wz / (2 * dx);
-    for i in 0..wy {
-      bline(width, dest, Px::new(p0.x, p0.y - i), Px::new(p1.x, p1.y - i), r, g, b);
-      bline(width, dest, Px::new(p0.x, p0.y + i), Px::new(p1.x, p1.y + i), r, g, b);
-    }
-  } else {
-    let wx = wz / (2 * dy);
-    for i in 0..wx {
-      bline(width, dest, Px::new(p0.x - i, p0.y), Px::new(p1.x - i, p1.y), r, g ,b);
-      bline(width, dest, Px::new(p0.x + i, p0.y), Px::new(p1.x + i, p1.y), r, g ,b);
-    }
-  }
-}
 #[inline(always)]
 fn put(width: usize, dest: &mut [u8], x: isize, y: isize, r: u8, g: u8, b: u8) {
   let offset = (y as usize * width + x as usize) * 3;
@@ -698,38 +654,4 @@ fn put(width: usize, dest: &mut [u8], x: isize, y: isize, r: u8, g: u8, b: u8) {
   // dest[offset  ] = r;
   // dest[offset+1] = g;
   // dest[offset+2] = b;
-}
-fn bline(width: usize, dest: &mut [u8], p0: Px, p1: Px, r: u8, g: u8, b: u8) {
-  let dx = (p1.x - p0.x).abs();
-  let dy = (p1.y - p0.y).abs();
-  let xinc = if p0.x < p1.x { 1 } else { -1 };
-  let yinc = if p0.y < p1.y { 1 } else { -1 };
-  let mut x = p0.x;
-  let mut y = p0.y;
-  put(width, dest, x, y, r, g, b);
-  if dx >= dy {
-    let mut e = (2 * dy) - dx;
-    while x != p1.x {
-      if e < 0 {
-        e += 2 * dy;
-      } else {
-        e += 2 * (dy - dx);
-        y += yinc;
-      }
-      x += xinc;
-      put(width, dest, x, y, r, g, b);
-    }
-  } else {
-    let mut e = (2 * dx) - dy;
-    while y != p1.y {
-      if e < 0 {
-        e += 2 * dx;
-      } else {
-        e += 2 * (dx - dy);
-        x += xinc;
-      }
-      y += yinc;
-      put(width, dest, x, y, r, g, b);
-    }
-  }
 }
