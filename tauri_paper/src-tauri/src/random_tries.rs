@@ -148,8 +148,6 @@ pub async fn do_montecarlo() {
 
       let mut local_max_sinr = f64::NEG_INFINITY;
 
-      let mut super_uper_min = f64::NEG_INFINITY;
-
       'monte_carlo: loop {
         if iterations & 0b11 == 0 {
           if i == 0 && iterations > next_check {
@@ -182,43 +180,12 @@ pub async fn do_montecarlo() {
           if local_max_sinr > *gms {
             *gms = local_max_sinr;
             drop(gms);
-            println!("min_sinr_sum: {}mw", sinr_avg);
+            println!("min_sinr_sum: {sinr_avg}mw");
             best_tx.send(Some(Arc::new(next_guess))).unwrap();
           }
         }
       }
     });
-
-    // TODO: map size должен включать все стены.
-    let mut left_to_solve = Vec::new();
-    for (y_from, y_to, _) in chop_ys(measure.res.1, 1) {
-      let next_guess = next_guess.clone();
-      let state = state.clone();
-      let measure = measure.clone();
-      left_to_solve.push(tokio::spawn(async move {
-        solve_slice(&*measure, y_from, y_to, &*next_guess, &*state)
-      }));
-    }
-    let mut signal_mw = 0f64;
-    let mut noise_mw = 0f64;
-    for i in left_to_solve {
-      let (s, n, min_sinr_dbm) = i.await.unwrap();
-      signal_mw += s;
-      noise_mw += n;
-      if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
-        super_uper_min = min_sinr_dbm;
-        println!("min_sinr: {min_sinr_dbm}dbm");
-      }
-      // if min_sinr_dbm < -5.0 {
-      //   continue 'monte_carlo;
-      // }
-    }
-    let sinr_avg = signal_mw / noise_mw;
-    if sinr_avg > max_sinr {
-      max_sinr = sinr_avg;
-      println!("min_sinr_sum: {}mw", sinr_avg);
-      best_tx.send(Some(next_guess)).unwrap();
-    }
   }
 }
 
