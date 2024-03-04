@@ -429,56 +429,56 @@ function resize() {
   canvas.height = window.innerHeight;
 }
 
-const container = document.createElement("div")
-style(container, {
-  position: "absolute",
-  top: "10px",
-  left: "10px",
-  display: "flex",
-  gap: "10px"
-})
-const tools = document.createElement("div");
-tools.classList.add("menu-item")
-tools.innerText = "Tools";
-tools.addEventListener("click", (e) => {
-  if (drawing_state.drawing) {
-    drawing_state.drawing = false;
-  } else {
-    drawing_state.drawing = true;
-  }
-});
-const load = document.createElement("div")
-load.classList.add("menu-item")
-load.innerText = "Load"
-load.addEventListener("click", async (e) => {
-  const selected = await open({
-    multiple: false,
-    filters: [{
-      name: 'Config',
-      extensions: ['json']
-    }]
-  });
-  app_state.config_path = selected
-  app_state.config = await get_config(app_state.config_path)
-  await appWindow.setTitle("[" + app_state.config_path.split('\\').pop() + "] – " + "5G Planner ")
-})
+// const container = document.createElement("div")
+// style(container, {
+//   position: "absolute",
+//   top: "10px",
+//   left: "10px",
+//   display: "flex",
+//   gap: "10px"
+// })
+// const tools = document.createElement("div");
+// tools.classList.add("menu-item")
+// tools.innerText = "Tools";
+// tools.addEventListener("click", (e) => {
+//   if (drawing_state.drawing) {
+//     drawing_state.drawing = false;
+//   } else {
+//     drawing_state.drawing = true;
+//   }
+// });
+// const load = document.createElement("div")
+// load.classList.add("menu-item")
+// load.innerText = "Load"
+// load.addEventListener("click", async (e) => {
+//   const selected = await open({
+//     multiple: false,
+//     filters: [{
+//       name: 'Config',
+//       extensions: ['json']
+//     }]
+//   });
+//   app_state.config_path = selected
+//   app_state.config = await get_config(app_state.config_path)
+//   await appWindow.setTitle("[" + app_state.config_path.split('\\').pop() + "] – " + "5G Planner ")
+// })
 
-const run = document.createElement("div")
-run.classList.add("menu-item")
-run.innerText = "Run";
-run.addEventListener("click", async (e) => {
-  emit('run')
-});
-const stop = document.createElement("div")
-stop.classList.add("menu-item")
-stop.innerText = "Stop";
-stop.addEventListener("click", (e) => {
-  emit('stop')
-});
-container.appendChild(tools)
-container.appendChild(load)
-container.appendChild(run)
-container.appendChild(stop)
+// const run = document.createElement("div")
+// run.classList.add("menu-item")
+// run.innerText = "Run";
+// run.addEventListener("click", async (e) => {
+//   emit('run')
+// });
+// const stop = document.createElement("div")
+// stop.classList.add("menu-item")
+// stop.innerText = "Stop";
+// stop.addEventListener("click", (e) => {
+//   emit('stop')
+// });
+// container.appendChild(tools)
+// container.appendChild(load)
+// container.appendChild(run)
+// container.appendChild(stop)
 // canvas.addEventListener('mousemove', (e) => {
 //   if (drawing) {
 //     console.log(e.offsetX - , e.offsetY)

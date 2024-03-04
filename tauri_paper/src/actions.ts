@@ -35,6 +35,11 @@ export const open = async () => {
 
 }
 
-export const newConfig = async (app_state: AppState, drawing_state: DrawingState) => {
-
+export const newConfig = async (app_state: AppState) => {
+    app_state.config.walls = []
+    app_state.config.radio_points = []
+    app_state.config.radio_zones = []
+    app_state.changes = false
+    await appWindow.setTitle("[  ] – " + "5G Planner ")
+    app_state.config_path = ""
 }

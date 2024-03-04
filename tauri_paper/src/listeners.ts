@@ -3,17 +3,23 @@ import { AppState, Config, DrawingState } from "./types";
 import { appWindow } from "@tauri-apps/api/window";
 import { dialog } from "@tauri-apps/api";
 import { open, save as save_dialog } from '@tauri-apps/api/dialog';
-import { quit, save } from "./actions";
+import { newConfig, quit, save } from "./actions";
 import { get_config, save_config, write_app_config } from "./api";
 
-let unlisten_notification: UnlistenFn, unlisten_new: UnlistenFn, unlisten_open: UnlistenFn, unlisten_save: UnlistenFn, unlisten_wall: UnlistenFn, unlisten_close: UnlistenFn
+let 
+    unlisten_notification: UnlistenFn, 
+    unlisten_new: UnlistenFn, 
+    unlisten_open: UnlistenFn, 
+    unlisten_save: UnlistenFn, 
+    unlisten_wall: UnlistenFn, 
+    unlisten_close: UnlistenFn
 
 export const registerGlobalListeners = async (app_state: AppState, drawing_state: DrawingState) => {
     unlisten_notification = await listen('notification', (event) => {
         dialog.message(event.payload.message, { type: "info" })
     })
     unlisten_new = await listen('new', async () => {
-        
+        await newConfig(app_state)
     })
     unlisten_open = await listen('open', async () => {
         const selected = await open({
@@ -87,6 +93,7 @@ export const registerGlobalListeners = async (app_state: AppState, drawing_state
         unlisten_save()
         unlisten_wall()
         unlisten_close()
+        unlisten_new()
 
         await quit()
     })
