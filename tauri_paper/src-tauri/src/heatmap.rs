@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use rand::Rng;
 
-use crate::geometry::line_intersection;
 use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
 use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint, Range, RANGE};
 
@@ -187,8 +186,8 @@ const DBMAX: f64 = 0.368;
 // в другую величину, которая более линейна, чтобы цвета были расположены
 // более равномерно
 const DBPOW: f64 = 16.0;
-fn scale_dbs(dBm: f64, range: &Range) -> f64 {
-  scale_dbs2(dBm, range.min, range.max, range.pow)
+fn scale_dbs(dbm: f64, range: &Range) -> f64 {
+  scale_dbs2(dbm, range.min, range.max, range.pow)
 }
 fn scale_dbs2(v: f64, min: f64, max: f64, pow: f64) -> f64 {
   ((v - min) / (max - min)).clamp(0.0, 1.0).powf(pow)
@@ -438,7 +437,7 @@ pub async fn do_image2(
           // Рассматриваем каждую точку доступа
           let dbms = calc_powers_dbm(&regular_state, &next_guess, pix);
 
-          for (zone, (min, max)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
+          for (zone, (min, max, min_xy)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
             //if is_inside(pix, zone) {
               let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
 
