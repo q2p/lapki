@@ -117,8 +117,9 @@ pub fn write_config(config: RoomState, path: &str) {
 }
 
 pub fn load_config(path: &str) {
-  let file = std::fs::read_to_string(path).unwrap();
-  *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
+  if let Ok(file) = std::fs::read_to_string(path) {
+    *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
+  }
 }
 
 pub fn get_config2() -> RoomState {
