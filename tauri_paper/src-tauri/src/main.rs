@@ -128,55 +128,12 @@ fn main() {
             }
         })
         .on_page_load(|window, payload| {})
-        .setup(|app| {
-            let product_name = app.config().package.product_name.clone().unwrap();
-            let app_handle = app.handle();
-            let id_run_event = app.listen_global("run", move |_| {
-                if RUNNING.load(Ordering::Relaxed) == true {
-                    // Notification::new("tauri_paper")
-                    //   .title("Info")
-                    //   .body("Simulation already running")
-                    //   .show()
-                    //   .expect("Failed send notification");
-                    app_handle
-                        .emit_all(
-                            "notification",
-                            NotificationPayload {
-                                message: "Simulation already running!".into(),
-                            },
-                        )
-                        .expect("Failed to send event");
-                    return;
-                }
-                RUNNING.store(true, Ordering::SeqCst);
-            });
-            let app_handle = app.handle();
-            let id_stop_event = app.listen_global("stop", move |_| {
-                if RUNNING.load(Ordering::SeqCst) == true {
-                    RUNNING.store(false, Ordering::SeqCst);
-                    return;
-                }
-                app_handle
-                    .emit_all(
-                        "notification",
-                        NotificationPayload {
-                            message: "No simulations running!".into(),
-                        },
-                    )
-                    .expect("Failed to send event");
-            });
-            tauri::async_runtime::spawn(async move {
-                loop {
-                    if !RUNNING.load(Ordering::SeqCst) {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
-                        continue;
-                    }
-                    do_montecarlo().await;
-                }
-            });
+        .setup(|_| {
+            tauri::async_runtime::spawn(do_montecarlo());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            room_state::should_play,
             room_state::get_config,
             heatmap::get_active_best,
             room_state::save_config,

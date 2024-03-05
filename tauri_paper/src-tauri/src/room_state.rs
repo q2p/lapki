@@ -1,7 +1,9 @@
-use std::sync::Mutex;
+use std::sync::{atomic::Ordering, Mutex};
 use std::str::FromStr;
 
 use serde::{Serialize, Deserialize};
+
+use crate::RUNNING;
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub struct Pos {
@@ -141,6 +143,11 @@ pub fn cmd_do(message: String) {
     }
     _ => {}
   }
+}
+
+#[tauri::command]
+pub fn should_play(should_play: bool) {
+  RUNNING.store(should_play, Ordering::SeqCst);
 }
 
 #[tauri::command]

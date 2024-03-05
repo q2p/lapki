@@ -1,5 +1,6 @@
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,6 +8,7 @@ use rand::{Rng, SeedableRng};
 
 use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{RoomState, Pos, Px};
+use crate::RUNNING;
 
 pub struct RoomState2 {
   /// dBm
@@ -100,8 +102,6 @@ pub async fn do_montecarlo() {
 
   println!("{:?}", limits);
 
-  let mut rng = rand::rngs::StdRng::from_entropy();
-
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
   let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
@@ -150,6 +150,9 @@ pub async fn do_montecarlo() {
 
       'monte_carlo: loop {
         if iterations & 0b11 == 0 {
+          while !RUNNING.load(Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+          }
           if i == 0 && iterations > next_check {
             next_check += 100;
             let now = Instant::now();
