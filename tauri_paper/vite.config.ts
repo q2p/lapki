@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import eslint from 'vite-plugin-eslint';
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
@@ -11,6 +12,7 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
   },
+  plugins: [eslint()],
   // 3. to make use of `TAURI_DEBUG` and other env variables
   // https://tauri.studio/v1/api/config#buildconfig.beforedevcommand
   envPrefix: ["VITE_", "TAURI_"],
