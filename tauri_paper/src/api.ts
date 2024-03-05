@@ -20,3 +20,7 @@ export async function write_app_config(app_config: AppConfig) {
 export async function get_active_best(): Promise<ActiveBest[]> {
     return (await invoke("get_active_best")) as ActiveBest[];
 }
+
+export async function should_play(play: boolean) {
+    return (await invoke("should_play", { shouldPlay: play }))
+}

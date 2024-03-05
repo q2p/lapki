@@ -5,7 +5,7 @@ import { appWindow } from '@tauri-apps/api/window';
 import { dialog } from "@tauri-apps/api";
 import { TauriEvent } from "@tauri-apps/api/event"
 import { ActiveBest, AppConfig, AppState, Config, DrawingState, Point2d, StoredBest, Wall } from "./types";
-import { get_active_best, get_app_config, get_config, write_app_config } from "./api";
+import { get_active_best, get_app_config, get_config, should_play, write_app_config } from "./api";
 import { quit, save } from "./actions";
 import { registerGlobalListeners } from "./listeners";
 import { registerGlobalShortcuts } from "./shortcuts";
@@ -659,9 +659,27 @@ export function raf2() {
     }
   }
 }
+let running = false;
+let btn = document.createElement("button")
+btn.addEventListener("click", () => {
+    if (running) {
+        running = false
+        btn.textContent = "Play"
+    } else {
+        running = true
+        btn.textContent = "Stop"
+    }
+    should_play(running)
+})
+btn.textContent = "Play"
+btn.style.position = "fixed"
+btn.style.top = "0px"
+btn.style.fontSize = "24px"
+btn.style.left = "50%"
+document.body.appendChild(btn)
 
-window.addEventListener("resize", resize);
-document.addEventListener("resize", resize);
-resize();
+window.addEventListener("resize", resize)
+document.addEventListener("resize", resize)
+resize()
 // requestAnimationFrame(raf)
-requestAnimationFrame(raf2);
+requestAnimationFrame(raf2)
