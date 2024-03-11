@@ -43,16 +43,8 @@ if (app_state.app_config.latest_config) {
 registerGlobalListeners(app_state, drawing_state)
 registerGlobalShortcuts(app_state, drawing_state)
 
-// rimg meters
-const rimg_xmin = 5
-const rimg_ymin = 12
-const rimg_xmax = 60 - (0 * 55) / 600
-const rimg_ymax = 52 - (0 * 40) / 436
-const rimg_yc = (rimg_ymin + rimg_ymax) / 2
-const rimg_xc = (rimg_xmin + rimg_xmax) / 2
-
-let camX = rimg_xc
-let camY = rimg_yc
+let camX = 0
+let camY = 0
 
 let cursor_x_m = 0
 let cursor_y_m = 0
@@ -156,17 +148,34 @@ window.addEventListener("mouseup", function(e) {
   }
 })
 
+export function center_view() {
+  let min_x = Infinity
+  let min_y = Infinity
+  let max_x = -Infinity
+  let max_y = -Infinity
+  for(const wall of app_state.config.walls) {
+    for (const i of [wall.a, wall.b]) {
+      min_x = Math.min(min_x, i.x)
+      min_y = Math.min(min_y, i.y)
+      max_x = Math.max(max_x, i.x)
+      max_y = Math.max(max_y, i.y)
+    }
+  }
+  camX = (min_x + max_x) / 2
+  camY = (min_y + max_y) / 2
+  zoom_target = Math.max(
+    canvas.width / (max_x - min_x),
+    canvas.height / (max_y - min_y),
+  )
+  zoom_pow = Math.log(zoom_target / 32) / Math.log(1.5)
+  get_active_best().then(update_active_els)
+}
+
+
 window.addEventListener("keydown", function(e) {
   if (e.code === "KeyS") {
     image.src = "../rimg3.png"
-    camX = rimg_xc
-    camY = rimg_yc
-    zoom_target = Math.max(
-      canvas.width / (rimg_xmax - rimg_xmin),
-      canvas.height / (rimg_ymax - rimg_ymin),
-    )
-    get_active_best().then(update_active_els)
-    zoom_pow = Math.log(zoom_target / 32) / Math.log(1.5)
+    center_view()
   }
 })
 
@@ -301,6 +310,7 @@ function raf() {
     zoom = zoom_target
   }
 
+  // TODO: Убрать?
   if (is_pressing) {
     camX = anchor_x_m - (cursor_x_p - canvas.width / 2) / zoom
     camY = anchor_y_m - (cursor_y_p - canvas.height / 2) / zoom
@@ -498,28 +508,6 @@ function resize() {
 // document.body.appendChild(container);
 
 export function raf2() {
-  requestAnimationFrame(raf2)
-
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = "high"
-
-  // const t = new Date().getTime()
-
-  zoom = zoom_target * 0.1 + zoom * 0.9
-  if (Math.abs(zoom - zoom_target) < 0.001) {
-    zoom = zoom_target
-  }
-
-  // let camX = rimg_xc+16*Math.sin(t*0.0001);
-  // let camY = rimg_yc+16*Math.cos(t*0.0001);
-  // let zoom = 24+8*Math.cos(1253.0+t*0.0001);
-  // zoom = 32
-  const offsetX = camX - canvas.width / (2 * zoom)
-  const offsetY = camY - canvas.height / (2 * zoom)
-
-  ctx.fillStyle = "#fff"
-  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
-
   if (zoom >= 128) {
     grid(offsetX, offsetY, zoom / 10, 0.5)
   }
@@ -681,5 +669,5 @@ document.body.appendChild(btn)
 window.addEventListener("resize", resize)
 document.addEventListener("resize", resize)
 resize()
-// requestAnimationFrame(raf)
+requestAnimationFrame(raf)
 requestAnimationFrame(raf2)

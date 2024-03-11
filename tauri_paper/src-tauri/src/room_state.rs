@@ -1,11 +1,14 @@
+use std::borrow::Borrow;
+use std::sync::Arc;
 use std::sync::{atomic::Ordering, Mutex};
 use std::str::FromStr;
 
 use serde::{Serialize, Deserialize};
+use tokio::sync::watch::Sender;
 
 use crate::RUNNING;
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Default, Debug, Copy, Clone)]
 pub struct Pos {
   pub x: f64,
   pub y: f64,
@@ -91,11 +94,16 @@ impl Px {
   }
 }
 
-static STATE: Mutex<RoomState> = Mutex::new(RoomState {
-  walls: Vec::new(),
-  radio_points: Vec::new(),
-  radio_zones: Vec::new(),
-});
+static STATE: Mutex<Option<Arc<Sender<RoomState>>>> = Mutex::new(None);
+pub fn get_state() -> Arc<Sender<RoomState>> {
+  return Arc::clone(&STATE.lock().unwrap().get_or_insert_with(|| {
+    Arc::new(Sender::new(RoomState {
+      walls: Vec::new(),
+      radio_points: Vec::new(),
+      radio_zones: Vec::new(),
+    }))
+  }));
+}
 
 #[derive(Clone)]
 pub struct Range {
@@ -112,7 +120,7 @@ pub static RANGE: Mutex<Range> = Mutex::new(Range {
 pub fn write_config(config: RoomState, path: &str) {
   let json = serde_json::to_string(&config).unwrap();
   {
-    *STATE.lock().unwrap() = config;
+    let _ = get_state().send_replace(config);
   }
   // std::fs::write("map.json", json).unwrap();
   std::fs::write(path, json).unwrap();
@@ -120,12 +128,13 @@ pub fn write_config(config: RoomState, path: &str) {
 
 pub fn load_config(path: &str) {
   if let Ok(file) = std::fs::read_to_string(path) {
-    *STATE.lock().unwrap() = serde_json::from_str(&file).unwrap();
+    let _ = get_state().send_replace(serde_json::from_str(&file).unwrap());
   }
 }
 
 pub fn get_config2() -> RoomState {
-  STATE.lock().unwrap().clone()
+  let a: RoomState = Sender::borrow(&get_state()).clone();
+  return a;
 }
 
 #[tauri::command]
@@ -153,7 +162,7 @@ pub fn should_play(should_play: bool) {
 #[tauri::command]
 pub fn get_config(path: &str) -> RoomState {
   load_config(path);
-  STATE.lock().unwrap().clone()
+  return Sender::borrow(&get_state()).clone();
 }
 
 #[tauri::command]

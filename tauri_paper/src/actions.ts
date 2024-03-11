@@ -4,6 +4,7 @@ import { save as save_dialog, open } from "@tauri-apps/api/dialog"
 import { appWindow } from "@tauri-apps/api/window"
 import { get_config, save_config, write_app_config } from "./api"
 import { dialog } from "@tauri-apps/api"
+import { center_view } from "./main"
 
 //  Project File Actions
 
@@ -45,6 +46,7 @@ export const openConfig = async (app_state: AppState) => {
   app_state.config_path = selected
   app_state.config = await get_config(app_state.config_path)
   await appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "] – " + "5G Planner ")
+  center_view()
 }
 
 export const newConfig = async (app_state: AppState) => {

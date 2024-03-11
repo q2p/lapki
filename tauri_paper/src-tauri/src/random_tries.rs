@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use rand::{Rng, SeedableRng};
 
 use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
-use crate::room_state::{RoomState, Pos, Px};
+use crate::room_state::{get_state, Pos, Px, RoomState};
 use crate::RUNNING;
 
 pub struct RoomState2 {
@@ -64,7 +64,7 @@ fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &Room
   return (signal_t / noise_t, min_sinr);
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BoundingBoxes {
   pub min: Pos,
   pub max: Pos,
@@ -93,35 +93,19 @@ impl BoundingBoxes {
 }
 
 pub async fn do_montecarlo() {
-  // let state = Arc::new(crate::room_state::get_config());
-  let state = Arc::new(crate::room_state::get_config2());
-
-  let limits = Arc::new(ParamRanges {
-    points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
-  });
-
-  println!("{:?}", limits);
-
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
-  let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<Arc<RoomState2>>>(None);
-
-  let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64));
-  let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
-  // let measure = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
-  // let render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 32*32));
-
-  println!("measure {:?}\nrender {:?}\n\n", measure, render);
+  let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<(Arc<RoomState>, Arc<RoomState2>, Arc<BoundingBoxes>)>>(None);
 
   {
-    let state = state.clone();
     tokio::spawn(async move {
       println!("Entered rx");
       while let Ok(()) = best_rx.changed().await {
         println!("iter_rx");
         let new_state = best_rx.borrow().as_ref().map(|v| v.clone());
         if let Some(ns) = new_state {
-          heatmap::next_image(render.clone(), state.clone(), ns.clone()).await;
+          let (rs1, rs2, render) = ns;
+          heatmap::next_image(render.clone(), rs1.clone(), rs2.clone()).await;
           tokio::time::sleep(Duration::from_secs(2)).await;
         }
       }
@@ -134,13 +118,22 @@ pub async fn do_montecarlo() {
   let global_max_sinr = Arc::new(Mutex::new(f64::NEG_INFINITY));
 
   for i in 0..threads {
-    let measure = Arc::clone(&measure);
-    let state = Arc::clone(&state);
-    let limits = Arc::clone(&limits);
     let best_tx = Arc::clone(&best_tx);
     let global_max_sinr = Arc::clone(&global_max_sinr);
     tokio::spawn(async move {
       let mut rng = rand::rngs::StdRng::from_entropy();
+
+      let mut receiver = get_state().subscribe();
+
+
+      let mut state = Arc::new(RoomState {
+        walls: vec![],
+        radio_points: vec![],
+        radio_zones: vec![],
+      });
+      let mut measure = BoundingBoxes::default();
+      let mut render = Arc::new(BoundingBoxes::default());
+      let mut limits = ParamRanges { points_limits_mws: vec![] };
 
       let mut iterations = 0;
       let mut next_check = 0;
@@ -157,8 +150,20 @@ pub async fn do_montecarlo() {
             next_check += 100;
             let now = Instant::now();
             if now.duration_since(last_print).as_secs() > 0 {
-              last_print = last_print + Duration::from_secs(1);
+              last_print += Duration::from_secs(1);
               println!("Iterations: {}", iterations * threads);
+
+              if let Ok(true) = receiver.has_changed() {
+                state = Arc::new(receiver.borrow_and_update().clone());
+                measure = BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64);
+                render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
+                limits = ParamRanges {
+                  points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
+                };
+                println!("{:?}", limits);
+                println!("measure {:?}\nrender {:?}\n\n", measure, render);
+              }
+
             }
           }
           tokio::task::yield_now().await;
@@ -169,7 +174,7 @@ pub async fn do_montecarlo() {
           // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| mw_to_dbm(190f64)).collect(),
         };
 
-        let (sinr_avg, min_sinr_dbm) = solve_slice(&*measure, 0, measure.res.1, &next_guess, &state);
+        let (sinr_avg, min_sinr_dbm) = solve_slice(&measure, 0, measure.res.1, &next_guess, &state);
         // if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
         //   super_uper_min = min_sinr_dbm;
         //   println!("min_sinr: {min_sinr_dbm}dbm");
@@ -184,7 +189,7 @@ pub async fn do_montecarlo() {
             *gms = local_max_sinr;
             drop(gms);
             println!("min_sinr_sum: {sinr_avg}mw");
-            best_tx.send(Some(Arc::new(next_guess))).unwrap();
+            best_tx.send(Some((state.clone(), Arc::new(next_guess), render.clone()))).unwrap();
           }
         }
       }
