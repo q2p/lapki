@@ -137,6 +137,7 @@ fn main() {
             room_state::get_config,
             heatmap::get_active_best,
             room_state::save_config,
+            room_state::get_bb,
             get_app_config,
             write_app_config
         ])

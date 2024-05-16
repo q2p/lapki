@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use rand::{Rng, SeedableRng};
+use serde::Serialize;
 
 use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
 use crate::room_state::{get_state, Pos, Px, RoomState};
@@ -64,13 +65,15 @@ fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &Room
   return (signal_t / noise_t, min_sinr);
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct BoundingBoxes {
   pub min: Pos,
   pub max: Pos,
   pub wh: Pos,
   pub res: (usize, usize),
 }
+
+
 
 impl BoundingBoxes {
   pub fn new(points: impl Iterator<Item = impl Deref<Target = Pos>>, padding: f64, pixels: u32) -> BoundingBoxes {
@@ -90,7 +93,16 @@ impl BoundingBoxes {
       res: (res_x, res_y),
     };
   }
+
+  const ZERO: Self = BoundingBoxes {
+    min: Pos::ZERO,
+    max: Pos::ZERO,
+    res: (0, 0),
+    wh: Pos::ZERO
+  };
 }
+
+pub static RENDERING_BB: Mutex<BoundingBoxes> = Mutex::new(BoundingBoxes::ZERO);
 
 pub async fn do_montecarlo() {
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
@@ -105,7 +117,10 @@ pub async fn do_montecarlo() {
         let new_state = best_rx.borrow().as_ref().map(|v| v.clone());
         if let Some(ns) = new_state {
           let (rs1, rs2, render) = ns;
-          heatmap::next_image(render.clone(), rs1.clone(), rs2.clone()).await;
+          {
+            heatmap::next_image(render.clone(), rs1.clone(), rs2.clone()).await;
+            *RENDERING_BB.lock().unwrap() = BoundingBoxes::clone(&render);
+          }
           tokio::time::sleep(Duration::from_secs(2)).await;
         }
       }

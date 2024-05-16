@@ -6,6 +6,7 @@ use std::str::FromStr;
 use serde::{Serialize, Deserialize};
 use tokio::sync::watch::Sender;
 
+use crate::random_tries::{BoundingBoxes, RENDERING_BB};
 use crate::RUNNING;
 
 #[derive(Serialize, Deserialize, Default, Debug, Copy, Clone)]
@@ -83,9 +84,11 @@ pub struct RadioZone {
 }
 
 impl Pos {
-  pub fn new(x: f64, y: f64) -> Pos {
+  pub const fn new(x: f64, y: f64) -> Pos {
     Pos { x, y }
   }
+
+  pub const ZERO: Pos = Pos::new(0.0, 0.0);
 }
 
 impl Px {
@@ -169,3 +172,10 @@ pub fn get_config(path: &str) -> RoomState {
 pub fn save_config(config: RoomState, path: &str) {
   write_config(config, path)
 }
+
+#[tauri::command]
+pub fn get_bb() -> BoundingBoxes {
+  RENDERING_BB.lock().unwrap().clone()
+}
+
+

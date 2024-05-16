@@ -58,6 +58,13 @@ export type DrawingState = {
     added_walls: Wall[],
 }
 
+export type BoundingBoxes = {
+    min: Point2d,
+    max: Point2d,
+    wh: Point2d,
+    res: [number, number]
+}
+
 export class StoredBest {
   constructor(
         readonly x: number,

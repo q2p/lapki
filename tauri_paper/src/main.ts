@@ -4,8 +4,8 @@ import { open, save as save_dialog } from "@tauri-apps/api/dialog"
 import { appWindow } from "@tauri-apps/api/window"
 import { dialog } from "@tauri-apps/api"
 import { TauriEvent } from "@tauri-apps/api/event"
-import { ActiveBest, AppConfig, AppState, Config, DrawingState, Point2d, StoredBest, Wall } from "./types"
-import { get_active_best, get_app_config, get_config, should_play, write_app_config } from "./api"
+import { ActiveBest, AppConfig, AppState, Config, DrawingState, Point2d, StoredBest, Wall, BoundingBoxes } from './types';
+import { get_active_best, get_app_config, get_bb, get_config, should_play, write_app_config } from "./api"
 import { quit, save } from "./actions"
 import { registerGlobalListeners } from "./listeners"
 import { registerGlobalShortcuts } from "./shortcuts"
@@ -153,7 +153,7 @@ export function center_view() {
   let min_y = Infinity
   let max_x = -Infinity
   let max_y = -Infinity
-  for(const wall of app_state.config.walls) {
+  for (const wall of app_state.config.walls) {
     for (const i of [wall.a, wall.b]) {
       min_x = Math.min(min_x, i.x)
       min_y = Math.min(min_y, i.y)
@@ -163,19 +163,26 @@ export function center_view() {
   }
   camX = (min_x + max_x) / 2
   camY = (min_y + max_y) / 2
-  zoom_target = Math.max(
+  zoom_target = Math.min(
     canvas.width / (max_x - min_x),
     canvas.height / (max_y - min_y),
-  )
+  ) * 0.95
   zoom_pow = Math.log(zoom_target / 32) / Math.log(1.5)
   get_active_best().then(update_active_els)
 }
 
+let BB: BoundingBoxes = {
+  min: {x: 0, y: 0},
+  max: {x: 0, y: 0},
+  res: [0, 0],
+  wh: {x: 0, y: 0}
+}
 
-window.addEventListener("keydown", function(e) {
+window.addEventListener("keydown", async function(e) {
   if (e.code === "KeyS") {
     image.src = "../rimg3.png"
     center_view()
+    BB = await get_bb()
   }
 })
 
@@ -327,10 +334,10 @@ function raf() {
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
   if (image.complete) {
-    const dx = Math.round((rimg_xmin - offsetX) * zoom)
-    const dy = Math.round((rimg_ymin - offsetY) * zoom)
-    const rx = Math.round((rimg_xmax - rimg_xmin) * zoom)
-    const ry = Math.round((rimg_ymax - rimg_ymin) * zoom)
+    const dx = Math.round((BB.min.x - offsetX) * zoom)
+    const dy = Math.round((BB.min.y - offsetY) * zoom)
+    const rx = Math.round(BB.wh.x * zoom)
+    const ry = Math.round(BB.wh.y * zoom)
     ctx.drawImage(image, dx, dy, rx, ry)
     ctx.fillRect(0, 0, dx, canvas.height)
     ctx.fillRect(dx + rx, 0, canvas.width, canvas.height)
@@ -385,6 +392,20 @@ function raf() {
 
   /// //////////////////////////////////////
 
+  // DRAW RADIOZONES
+  for (const zone of app_state.config.radio_zones) {
+    ctx.beginPath()
+    ctx.fillStyle = `rgba(${zone.r}, ${zone.g}, ${zone.b}, 0.5)`
+    ctx.moveTo((zone.points[0].x-offsetX)*zoom, (zone.points[0].y -offsetY)*zoom)
+    for (let i = 1; i < zone.points.length; i++) {
+      ctx.lineTo((zone.points[i].x-offsetX)*zoom, (zone.points[i].y -offsetY)*zoom)
+    }
+    ctx.closePath()
+    ctx.fill();
+  }
+
+
+  // TODO: CHECK IF UNDEFINED OR NUL
   ctx.lineWidth = wall_thickness
   ctx.strokeStyle = "#000"
   ctx.fillStyle = "#000"
@@ -410,6 +431,78 @@ function raf() {
     // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
   }
   ctx.stroke()
+
+  if (drawing_state.added_walls.length > 0) {
+    ctx.lineWidth = wall_thickness
+    ctx.strokeStyle = "#000"
+    ctx.fillStyle = "#000"
+    for (const w of drawing_state.added_walls) {
+      const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
+      const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
+      const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
+      const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
+      ctx.fillRect(
+        xmin - wall_thickness / 2,
+        ymin - wall_thickness / 2,
+        xmax - xmin + wall_thickness,
+        ymax - ymin + wall_thickness,
+      )
+    }
+  }
+
+  if (drawing_state.drawing) {
+    ctx.strokeStyle = "#000"
+    ctx.fillStyle = "#000"
+    ctx.beginPath()
+    ctx.fillRect(
+      drawing_state.mevent.clientX - wall_thickness / 2,
+      drawing_state.mevent.clientY - wall_thickness / 2,
+      wall_thickness,
+      wall_thickness,
+    )
+    ctx.stroke()
+
+    if (drawing_state.drawing_last_point) {
+      const x = Math.round((drawing_state.drawing_last_point.x - offsetX) * zoom)
+      const y = Math.round((drawing_state.drawing_last_point.y - offsetY) * zoom)
+      ctx.strokeStyle = "#000"
+      ctx.fillStyle = "#000"
+      ctx.beginPath()
+      ctx.fillRect(
+        x - wall_thickness / 2,
+        y - wall_thickness / 2,
+        wall_thickness,
+        wall_thickness,
+      )
+      ctx.stroke()
+      if (drawing_state.drawing_point) {
+        const x = Math.round((drawing_state.drawing_point.x - offsetX) * zoom)
+        const y = Math.round((drawing_state.drawing_point.y - offsetY) * zoom)
+        ctx.strokeStyle = "#000"
+        ctx.fillStyle = "#000"
+        ctx.beginPath()
+        ctx.fillRect(
+          x - wall_thickness / 2,
+          y - wall_thickness / 2,
+          wall_thickness,
+          wall_thickness,
+        )
+        ctx.stroke()
+      }
+      if (drawing_pressed) {
+        ctx.lineWidth = wall_thickness / 4
+        ctx.strokeStyle = "#000"
+        ctx.fillStyle = "#000"
+        ctx.beginPath()
+        ctx.moveTo(
+          (drawing_state.drawing_last_point.x - offsetX) * zoom,
+          (drawing_state.drawing_last_point.y - offsetY) * zoom,
+        )
+        ctx.lineTo(drawing_state.mevent.offsetX, drawing_state.mevent.offsetY)
+        ctx.stroke()
+      }
+    }
+  }
 
   const scales = [1, 2, 5]
   for (let i = -10; i !== 32; i++) {
@@ -507,146 +600,6 @@ function resize() {
 // })
 // document.body.appendChild(container);
 
-export function raf2() {
-  if (zoom >= 128) {
-    grid(offsetX, offsetY, zoom / 10, 0.5)
-  }
-  if (zoom >= 8) {
-    grid(offsetX, offsetY, zoom, 0.7)
-  }
-
-  if (app_state.config !== undefined) {
-    ctx.lineWidth = wall_thickness
-    ctx.strokeStyle = "#000"
-    ctx.fillStyle = "#000"
-    ctx.beginPath()
-    for (const w of app_state.config.walls) {
-      const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
-      const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
-      const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
-      const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
-      ctx.fillRect(xmin - wall_thickness / 2, ymin - wall_thickness / 2, xmax - xmin + wall_thickness, ymax - ymin + wall_thickness)
-
-      // Раскомментить для угловатых стен.
-      // w.a.x = Math.round(w.a.x)
-      // w.a.y = Math.round(w.a.y)
-      // w.b.x = Math.round(w.b.x)
-      // w.b.y = Math.round(w.b.y)
-      // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
-      // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
-    }
-    ctx.stroke()
-  }
-
-  if (drawing_state.added_walls.length > 0) {
-    ctx.lineWidth = wall_thickness
-    ctx.strokeStyle = "#000"
-    ctx.fillStyle = "#000"
-    for (const w of drawing_state.added_walls) {
-      const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
-      const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
-      const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
-      const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
-      ctx.fillRect(
-        xmin - wall_thickness / 2,
-        ymin - wall_thickness / 2,
-        xmax - xmin + wall_thickness,
-        ymax - ymin + wall_thickness,
-      )
-    }
-  }
-
-  if (drawing_state.drawing) {
-    ctx.strokeStyle = "#000"
-    ctx.fillStyle = "#000"
-    ctx.beginPath()
-    ctx.fillRect(
-      drawing_state.mevent.clientX - wall_thickness / 2,
-      drawing_state.mevent.clientY - wall_thickness / 2,
-      wall_thickness,
-      wall_thickness,
-    )
-    ctx.stroke()
-
-    if (drawing_state.drawing_last_point) {
-      const x = Math.round((drawing_state.drawing_last_point.x - offsetX) * zoom)
-      const y = Math.round((drawing_state.drawing_last_point.y - offsetY) * zoom)
-      ctx.strokeStyle = "#000"
-      ctx.fillStyle = "#000"
-      ctx.beginPath()
-      ctx.fillRect(
-        x - wall_thickness / 2,
-        y - wall_thickness / 2,
-        wall_thickness,
-        wall_thickness,
-      )
-      ctx.stroke()
-      if (drawing_state.drawing_point) {
-        const x = Math.round((drawing_state.drawing_point.x - offsetX) * zoom)
-        const y = Math.round((drawing_state.drawing_point.y - offsetY) * zoom)
-        ctx.strokeStyle = "#000"
-        ctx.fillStyle = "#000"
-        ctx.beginPath()
-        ctx.fillRect(
-          x - wall_thickness / 2,
-          y - wall_thickness / 2,
-          wall_thickness,
-          wall_thickness,
-        )
-        ctx.stroke()
-      }
-      if (drawing_pressed) {
-        ctx.lineWidth = wall_thickness / 4
-        ctx.strokeStyle = "#000"
-        ctx.fillStyle = "#000"
-        ctx.beginPath()
-        ctx.moveTo(
-          (drawing_state.drawing_last_point.x - offsetX) * zoom,
-          (drawing_state.drawing_last_point.y - offsetY) * zoom,
-        )
-        ctx.lineTo(drawing_state.mevent.offsetX, drawing_state.mevent.offsetY)
-        ctx.stroke()
-      }
-    }
-  }
-
-  // ctx.lineWidth = wall_thickness;
-  // ctx.strokeStyle = "#000";
-  // ctx.fillStyle = "#000";
-  // ctx.beginPath();
-  // const xmin = (0 - offsetX) * zoom;
-  // const xmax = (10 - offsetX) * zoom;
-  // const ymin = (0 - offsetY) * zoom;
-  // const ymax = (0.001 - offsetY) * zoom;
-  // ctx.fillRect(
-  //   xmin - wall_thickness / 2,
-  //   ymin - wall_thickness / 2,
-  //   xmax - xmin + wall_thickness,
-  //   ymax - ymin + wall_thickness
-  // );
-  // ctx.stroke();
-
-  const scales = [1, 2, 5]
-  for (let i = -10; i !== 32; i++) {
-    const decs = Math.floor(i / 3)
-    const scale = scales[((i % 3) + 3) % 3]
-    const meters = Math.pow(10, decs) * scale
-    if (meters * zoom > 64) {
-      ctx.lineWidth = 1
-      ctx.strokeStyle = "#000"
-      ctx.fillStyle = "#000"
-
-      ctx.font = "bold 22px sans-serif"
-      const width = Math.round(meters * zoom)
-      ctx.textAlign = "center"
-      ctx.fillText(`${meters}m`, 32 + width / 2, canvas.height - 50)
-      ctx.fillRect(32, canvas.height - 34, width, 2)
-      ctx.fillRect(32, canvas.height - 37, 2, 8)
-      ctx.fillRect(32 + width, canvas.height - 37, 2, 8)
-      break
-    }
-  }
-}
 let running = false
 const btn = document.createElement("button")
 btn.addEventListener("click", () => {
@@ -670,4 +623,3 @@ window.addEventListener("resize", resize)
 document.addEventListener("resize", resize)
 resize()
 requestAnimationFrame(raf)
-requestAnimationFrame(raf2)

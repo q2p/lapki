@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api"
-import { ActiveBest, AppConfig, Config } from "./types"
+import { ActiveBest, AppConfig, BoundingBoxes, Config } from "./types"
 
 export async function get_config(path: string): Promise<Config> {
   return (await invoke("get_config", { path: path })) as Config
@@ -23,4 +23,8 @@ export async function get_active_best(): Promise<ActiveBest[]> {
 
 export async function should_play(play: boolean) {
   return (await invoke("should_play", { shouldPlay: play }))
+}
+
+export async function get_bb(): Promise<BoundingBoxes> {
+  return (await invoke("get_bb")) as BoundingBoxes
 }
