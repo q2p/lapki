@@ -1,7 +1,7 @@
 <?php
   $filename = "notebook_01.txt";
 
-  $conn = new PDO("mysql:host=localhost;dbname=library41", "root", "");
+  $conn = new PDO("mysql:host=localhost;dbname=webtechdb", "root", "");
   $result = $conn->query("SELECT * FROM notebook_01");
 
   $fd = fopen($filename, 'w');
