@@ -34,12 +34,6 @@ const drawing_state = <DrawingState>{
 }
 drawing_state.added_walls = []
 
-if (app_state.app_config.latest_config) {
-  app_state.config_path = app_state.app_config.latest_config
-  app_state.config = await get_config(app_state.config_path)
-  appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "] – " + "5G Planner ")
-}
-
 registerGlobalListeners(app_state, drawing_state)
 registerGlobalShortcuts(app_state, drawing_state)
 
@@ -119,7 +113,7 @@ let selected: Wall[] = []
 const elprops = document.getElementById("el_props") as HTMLDivElement
 const elprops_title = document.getElementById("title") as HTMLHeadingElement
 const elprops_container = document.getElementById("container") as HTMLDivElement
-elprops.style.display = "none" 
+elprops.style.display = "none"
 
 function show_elprops(wall: Wall) {
   elprops.style.display = ""
@@ -131,7 +125,7 @@ function show_elprops(wall: Wall) {
       .findIndex(w => wall_eq(wall, w))
     if (idx > -1) {
       app_state.config.walls.splice(idx, 1)
-    } 
+    }
     idx = drawing_state.added_walls
       .findIndex(w => wall_eq(wall, w))
     if (idx > -1) {
@@ -474,7 +468,7 @@ function raf() {
   }
 
   if (zoom >= 128) {
-    grid(offsetX, offsetY, zoom / 10, 0.5)    
+    grid(offsetX, offsetY, zoom / 10, 0.5)
   }
   if (zoom >= 8) {
     grid(offsetX, offsetY, zoom, 0.7)
@@ -520,11 +514,28 @@ function raf() {
 
   // DRAW RADIOZONES
   for (const zone of app_state.config.radio_zones) {
+    const zone2: Point2d[] = []
+    for (const p of zone.points) {
+      zone2.push({ x: p.x, y: p.y })
+    }
+    const shift = 0.05
+    for (let i = 0; i !== zone2.length; i++) {
+      const a = zone2[i]
+      const b = zone2[(i + 1) % zone2.length]
+      const n = normalize({
+        x: b.y - a.y,
+        y: a.x - b.x,
+      })
+      a.x += n.x * shift
+      a.y += n.y * shift
+      b.x += n.x * shift
+      b.y += n.y * shift
+    }
     ctx.beginPath()
     ctx.fillStyle = `rgba(${zone.r}, ${zone.g}, ${zone.b}, 0.5)`
-    ctx.moveTo((zone.points[0].x-offsetX)*zoom, (zone.points[0].y -offsetY)*zoom)
+    ctx.moveTo((zone2[0].x-offsetX)*zoom, (zone2[0].y -offsetY)*zoom)
     for (let i = 1; i < zone.points.length; i++) {
-      ctx.lineTo((zone.points[i].x-offsetX)*zoom, (zone.points[i].y -offsetY)*zoom)
+      ctx.lineTo((zone2[i].x-offsetX)*zoom, (zone2[i].y -offsetY)*zoom)
     }
     ctx.closePath()
     ctx.fill();
@@ -789,4 +800,23 @@ document.body.appendChild(btn)
 window.addEventListener("resize", resize)
 document.addEventListener("resize", resize)
 resize()
-requestAnimationFrame(raf)
+
+if (app_state.app_config.latest_config) {
+  app_state.config_path = app_state.app_config.latest_config
+  app_state.config = await get_config(app_state.config_path)
+  appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "] – " + "5G Planner ")
+  center_view()
+}
+
+raf()
+
+function len_vec(vec: Point2d): number {
+  return Math.sqrt(vec.x * vec.x + vec.y * vec.y)
+}
+function normalize(vec: Point2d): Point2d {
+  const len = len_vec(vec)
+  return {
+    x: vec.x / len,
+    y: vec.y / len,
+  }
+}
