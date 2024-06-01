@@ -4,7 +4,7 @@ import { open, save as save_dialog } from "@tauri-apps/api/dialog"
 import { appWindow } from "@tauri-apps/api/window"
 import { dialog } from "@tauri-apps/api"
 import { TauriEvent } from "@tauri-apps/api/event"
-import { ActiveBest, AppConfig, AppState, Config, DrawingState, Point2d, StoredBest, Wall, BoundingBoxes } from './types';
+import { ActiveBest, AppConfig, AppState, Config, DrawingState, Point2d, StoredBest, Wall, BoundingBoxes, Stack, wall_eq, MATERIALS } from './types';
 import { get_active_best, get_app_config, get_bb, get_config, should_play, write_app_config } from "./api"
 import { quit, save } from "./actions"
 import { registerGlobalListeners } from "./listeners"
@@ -62,11 +62,13 @@ setInterval(function() {
   }
 }, 200)
 
-const wall_thickness = 8
+const wall_thickness = 6 // 8
 
 let zoom_pow = 1
 let zoom_target = 32
 let zoom = zoom_target
+
+let radius = 10
 
 window.addEventListener("wheel", function(e: WheelEvent) {
   zoom_pow = Math.max(-4, Math.min(6, zoom_pow - e.deltaY / 100))
@@ -92,16 +94,140 @@ let is_pressing = false
 
 let drawing_pressed = false
 
+let stack_points = new Stack()
+
+function in_line(a: Point2d, b: Point2d, c: Point2d) {
+  const offsetX = camX - canvas.width / (2 * zoom)
+  const offsetY = camY - canvas.height / (2 * zoom)
+  const xmin = Math.round((Math.min(a.x, b.x) - offsetX) * zoom)
+  const xmax = Math.round((Math.max(a.x, b.x) - offsetX) * zoom)
+  const ymin = Math.round((Math.min(a.y, b.y) - offsetY) * zoom)
+  const ymax = Math.round((Math.max(a.y, b.y) - offsetY) * zoom)
+  const dxL = xmax - xmin, dyL = ymax - ymin  // line: vector from (x1,y1) to (x2,y2)
+  const dxP = c.x - xmin, dyP = c.y - ymin  // point: vector from (x1,y1) to (xp,yp)
+  const squareLen = dxL * dxL + dyL * dyL;  // squared length of line
+  const dotProd   = dxP * dxL + dyP * dyL;  // squared distance of point from (x1,y1) along line
+  const crossProd = dyP * dxL - dxP * dyL;  // area of parallelogram defined by line and point
+
+  // perpendicular distance of point from line
+  const distance = Math.abs(crossProd) / Math.sqrt(squareLen);
+
+  return (distance <= wall_thickness && dotProd >= 0 && dotProd <= squareLen);
+}
+
+let selected: Wall[] = []
+const elprops = document.getElementById("el_props") as HTMLDivElement
+const elprops_title = document.getElementById("title") as HTMLHeadingElement
+const elprops_container = document.getElementById("container") as HTMLDivElement
+elprops.style.display = "none" 
+
+function show_elprops(wall: Wall) {
+  elprops.style.display = ""
+  elprops_title.textContent = "Wall"
+  const btn = document.createElement("button")
+  btn.textContent = "Delete"
+  btn.onclick = function() {
+    let idx = app_state.config.walls
+      .findIndex(w => wall_eq(wall, w))
+    if (idx > -1) {
+      app_state.config.walls.splice(idx, 1)
+    } 
+    idx = drawing_state.added_walls
+      .findIndex(w => wall_eq(wall, w))
+    if (idx > -1) {
+      drawing_state.added_walls.splice(idx, 1)
+    }
+    selected = []
+  }
+  elprops_container.appendChild(btn)
+  const x = document.createElement("div")
+  const label = document.createElement("label")
+  label.textContent = "Material"
+  const select = document.createElement("select")
+  for (const material of MATERIALS) {
+    const option = document.createElement("option")
+    option.value = material[1].toString()
+    option.textContent = material[0]
+    if (wall.damping === material[1]) option.selected = true
+    select.appendChild(option)
+  }
+  select.onchange = function () {
+    wall.damping = parseInt(select.value)
+  }
+  x.appendChild(label)
+  x.appendChild(select)
+  elprops_container.appendChild(x)
+}
+
+function hide_elprops() {
+  elprops.style.display = "none"
+  while (elprops_container.firstChild) {
+    elprops_container.removeChild(elprops_container.firstChild);
+  }
+}
+
+canvas.addEventListener("click", function(e) {
+  hide_elprops()
+  selected = []
+  cursor_x_p = e.clientX
+  cursor_y_p = e.clientY
+  cursor_x_m = camX + (cursor_x_p - canvas.width / 2) / zoom
+  cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
+
+  let next = false
+  for (let wall of app_state.config.walls) {
+    if (in_line(wall.a, wall.b, <Point2d>{x: cursor_x_p, y: cursor_y_p})) {
+      selected.push(wall)
+      next = true
+      show_elprops(wall)
+      break
+    }
+  }
+  for (let wall of drawing_state.added_walls) {
+    if (next) {
+      break
+    }
+    if (in_line(wall.a, wall.b, <Point2d>{x: cursor_x_p, y: cursor_y_p})) {
+      selected.push(wall)
+      show_elprops(wall)
+    }
+  }
+})
+
 window.addEventListener("mousedown", function(e) {
   cursor_x_p = e.clientX
   cursor_y_p = e.clientY
   cursor_x_m = camX + (cursor_x_p - canvas.width / 2) / zoom
   cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
   if (drawing_state.drawing) {
-    drawing_pressed = true
-    drawing_state.drawing_last_point = {
-      x: cursor_x_m,
-      y: cursor_y_m,
+    // drawing_pressed = true
+    const point = {
+      x: Math.round(cursor_x_m * 10) / 10,
+      y: Math.round(cursor_y_m * 10) / 10,
+    }
+    stack_points.add(point)
+    if (stack_points.size() >=2) {
+      let first = stack_points.remove()
+      let second = stack_points.remove()
+      stack_points.clear()
+      let wall: Wall = {
+        a: {
+          x: first.x,
+          y: first.y
+        },
+        b: {
+          x: second.x,
+          y: second.y
+        },
+        damping: 2.0
+      }
+      drawing_state.added_walls.push(wall)
+      app_state.changes = true
+      if (app_state.config_path) {
+        appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "*] – " + "5G Planner ")
+      } else {
+        appWindow.setTitle("[Untitled" + "*" + "]" + "– 5G Planner")
+      }
     }
   } else {
     is_pressing = true
@@ -116,33 +242,33 @@ window.addEventListener("mouseup", function(e) {
   cursor_x_m = camX + (cursor_x_p - canvas.width / 2) / zoom
   cursor_y_m = camY + (cursor_y_p - canvas.height / 2) / zoom
   if (drawing_state.drawing) {
-    if (
-      drawing_state.drawing_last_point &&
-      drawing_state.drawing_point &&
-      Math.abs(cursor_x_m - drawing_state.drawing_last_point.x) <= 0.9 &&
-      Math.abs(cursor_y_m - drawing_state.drawing_last_point.y) <= 0.9
-    ) {
-      drawing_pressed = false
-      drawing_state.drawing_last_point = null
-    } else {
-      drawing_pressed = false
-      drawing_state.drawing_point = {
-        x: cursor_x_m,
-        y: cursor_y_m,
-      }
-      const wall: Wall = {
-        a: drawing_state.drawing_last_point!,
-        b: drawing_state.drawing_point!,
-        damping: 500, // fix me
-      }
-      drawing_state.added_walls.push(wall)
-      app_state.changes = true
-      if (app_state.config_path) {
-        appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "*] – " + "5G Planner ")
-      } else {
-        appWindow.setTitle("[Untitled" + "*" + "]" + "– 5G Planner")
-      }
-    }
+    // if (
+    //   drawing_state.drawing_last_point &&
+    //   drawing_state.drawing_point &&
+    //   Math.abs(cursor_x_m - drawing_state.drawing_last_point.x) <= 0.9 &&
+    //   Math.abs(cursor_y_m - drawing_state.drawing_last_point.y) <= 0.9
+    // ) {
+    //   drawing_pressed = false
+    //   drawing_state.drawing_last_point = null
+    // } else {
+    //   drawing_pressed = false
+    //   drawing_state.drawing_point = {
+    //     x: cursor_x_m,
+    //     y: cursor_y_m,
+    //   }
+    //   const wall: Wall = {
+    //     a: drawing_state.drawing_last_point!,
+    //     b: drawing_state.drawing_point!,
+    //     damping: 500, // fix me
+    //   }
+    //   drawing_state.added_walls.push(wall)
+    //   app_state.changes = true
+    //   if (app_state.config_path) {
+    //     appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "*] – " + "5G Planner ")
+    //   } else {
+    //     appWindow.setTitle("[Untitled" + "*" + "]" + "– 5G Planner")
+    //   }
+    // }
   } else {
     is_pressing = false
   }
@@ -348,7 +474,7 @@ function raf() {
   }
 
   if (zoom >= 128) {
-    grid(offsetX, offsetY, zoom / 10, 0.5)
+    grid(offsetX, offsetY, zoom / 10, 0.5)    
   }
   if (zoom >= 8) {
     grid(offsetX, offsetY, zoom, 0.7)
@@ -404,7 +530,6 @@ function raf() {
     ctx.fill();
   }
 
-
   // TODO: CHECK IF UNDEFINED OR NUL
   ctx.lineWidth = wall_thickness
   ctx.strokeStyle = "#000"
@@ -415,12 +540,15 @@ function raf() {
     const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
     const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
     const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
-    ctx.fillRect(
-      xmin - wall_thickness / 2,
-      ymin - wall_thickness / 2,
-      xmax - xmin + wall_thickness,
-      ymax - ymin + wall_thickness,
-    )
+    // ctx.fillRect(
+    //   xmin - wall_thickness / 2,
+    //   ymin - wall_thickness / 2,
+    //   xmax - xmin + wall_thickness,
+    //   ymax - ymin + wall_thickness,
+    // )
+    ctx.moveTo(xmin, ymin)
+    ctx.lineTo(xmax, ymax)
+    ctx.stroke()
 
     // Раскомментить для угловатых стен.
     // w.a.x = Math.round(w.a.x)
@@ -430,27 +558,105 @@ function raf() {
     // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
     // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
   }
-  ctx.stroke()
 
   if (drawing_state.added_walls.length > 0) {
     ctx.lineWidth = wall_thickness
     ctx.strokeStyle = "#000"
-    ctx.fillStyle = "#000"
     for (const w of drawing_state.added_walls) {
       const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
       const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
       const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
       const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
-      ctx.fillRect(
-        xmin - wall_thickness / 2,
-        ymin - wall_thickness / 2,
-        xmax - xmin + wall_thickness,
-        ymax - ymin + wall_thickness,
-      )
+      // ctx.fillRect(
+      //   xmin - wall_thickness / 2,
+      //   ymin - wall_thickness / 2,
+      //   xmax - xmin + wall_thickness,
+      //   ymax - ymin + wall_thickness,
+      // )
+      ctx.moveTo(xmin, ymin)
+      ctx.lineTo(xmax, ymax)
+      ctx.stroke()
     }
   }
 
+  if (selected.length > 0) {
+    for (const w of selected) {
+      ctx.beginPath()
+      const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
+      const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
+      const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
+      const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
+      ctx.fillStyle = "blue"
+      ctx.fillRect(
+        xmin - wall_thickness / 2,
+        ymin - wall_thickness / 2 ,
+        xmax - xmin + wall_thickness,
+        ymax - ymin + wall_thickness
+      )
+      ctx.fillStyle = "rgb(0, 255, 255)"
+      ctx.arc(xmin, ymin, radius, 0, 2 * Math.PI, false)
+      ctx.arc(xmax, ymax, radius, 0, 2 * Math.PI, false)
+      ctx.fill()
+    }
+  }
+
+  // if (drawing_state.drawing) {
+  //   // Рисуем точку на курсоре мыши
+  //   ctx.strokeStyle = "#000"
+  //   ctx.fillStyle = "#000"
+  //   ctx.beginPath()
+  //   ctx.fillRect(
+  //     drawing_state.mevent.clientX - wall_thickness / 2,
+  //     drawing_state.mevent.clientY - wall_thickness / 2,
+  //     wall_thickness,
+  //     wall_thickness,
+  //   )
+  //   ctx.stroke()
+
+  //   if (drawing_state.drawing_last_point) {
+  //     const x = Math.round((drawing_state.drawing_last_point.x - offsetX) * zoom)
+  //     const y = Math.round((drawing_state.drawing_last_point.y - offsetY) * zoom)
+  //     ctx.strokeStyle = "#000"
+  //     ctx.fillStyle = "#000"
+  //     ctx.beginPath()
+  //     ctx.fillRect(
+  //       x - wall_thickness / 2,
+  //       y - wall_thickness / 2,
+  //       wall_thickness,
+  //       wall_thickness,
+  //     )
+  //     ctx.stroke()
+  //     if (drawing_state.drawing_point) {
+  //       const x = Math.round((drawing_state.drawing_point.x - offsetX) * zoom)
+  //       const y = Math.round((drawing_state.drawing_point.y - offsetY) * zoom)
+  //       ctx.strokeStyle = "#000"
+  //       ctx.fillStyle = "#000"
+  //       ctx.beginPath()
+  //       ctx.fillRect(
+  //         x - wall_thickness / 2,
+  //         y - wall_thickness / 2,
+  //         wall_thickness,
+  //         wall_thickness,
+  //       )
+  //       ctx.stroke()
+  //     }
+  //     if (drawing_pressed) {
+  //       ctx.lineWidth = wall_thickness / 4
+  //       ctx.strokeStyle = "#000"
+  //       ctx.fillStyle = "#000"
+  //       ctx.beginPath()
+  //       ctx.moveTo(
+  //         (drawing_state.drawing_last_point.x - offsetX) * zoom,
+  //         (drawing_state.drawing_last_point.y - offsetY) * zoom,
+  //       )
+  //       ctx.lineTo(drawing_state.mevent.offsetX, drawing_state.mevent.offsetY)
+  //       ctx.stroke()
+  //     }
+  //   }
+  // }
+
   if (drawing_state.drawing) {
+    // Рисуем точку на курсоре мыши
     ctx.strokeStyle = "#000"
     ctx.fillStyle = "#000"
     ctx.beginPath()
@@ -461,47 +667,6 @@ function raf() {
       wall_thickness,
     )
     ctx.stroke()
-
-    if (drawing_state.drawing_last_point) {
-      const x = Math.round((drawing_state.drawing_last_point.x - offsetX) * zoom)
-      const y = Math.round((drawing_state.drawing_last_point.y - offsetY) * zoom)
-      ctx.strokeStyle = "#000"
-      ctx.fillStyle = "#000"
-      ctx.beginPath()
-      ctx.fillRect(
-        x - wall_thickness / 2,
-        y - wall_thickness / 2,
-        wall_thickness,
-        wall_thickness,
-      )
-      ctx.stroke()
-      if (drawing_state.drawing_point) {
-        const x = Math.round((drawing_state.drawing_point.x - offsetX) * zoom)
-        const y = Math.round((drawing_state.drawing_point.y - offsetY) * zoom)
-        ctx.strokeStyle = "#000"
-        ctx.fillStyle = "#000"
-        ctx.beginPath()
-        ctx.fillRect(
-          x - wall_thickness / 2,
-          y - wall_thickness / 2,
-          wall_thickness,
-          wall_thickness,
-        )
-        ctx.stroke()
-      }
-      if (drawing_pressed) {
-        ctx.lineWidth = wall_thickness / 4
-        ctx.strokeStyle = "#000"
-        ctx.fillStyle = "#000"
-        ctx.beginPath()
-        ctx.moveTo(
-          (drawing_state.drawing_last_point.x - offsetX) * zoom,
-          (drawing_state.drawing_last_point.y - offsetY) * zoom,
-        )
-        ctx.lineTo(drawing_state.mevent.offsetX, drawing_state.mevent.offsetY)
-        ctx.stroke()
-      }
-    }
   }
 
   const scales = [1, 2, 5]
@@ -615,6 +780,8 @@ btn.addEventListener("click", () => {
 btn.textContent = "Play"
 btn.style.position = "fixed"
 btn.style.top = "0px"
+btn.style.cursor = "pointer"
+btn.style.userSelect = "none"
 btn.style.fontSize = "24px"
 btn.style.left = "50%"
 document.body.appendChild(btn)
