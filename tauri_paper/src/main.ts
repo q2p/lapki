@@ -109,6 +109,31 @@ function in_line(a: Point2d, b: Point2d, c: Point2d) {
   return (distance <= wall_thickness && dotProd >= 0 && dotProd <= squareLen);
 }
 
+function mul_vec(v: Point2d, n: number): Point2d {
+  return {
+    x: v.x * n,
+    y: v.y * n,
+  }
+}
+function add_vec(a: Point2d, b: Point2d): Point2d {
+  return {
+    x: a.x + b.x,
+    y: a.y + b.y,
+  }
+}
+function sub_vec(a: Point2d, b: Point2d): Point2d {
+  return {
+    x: a.x - b.x,
+    y: a.y - b.y,
+  }
+}
+function dot_prod(v1: Point2d, v2: Point2d): number {
+  return v1.x * v2.x + v1.y * v2.y
+}
+function cross_prod(v1: Point2d, v2: Point2d): number {
+  return v1.x * v2.y - v1.y * v2.x;
+}
+
 let selected: Wall[] = []
 const elprops = document.getElementById("el_props") as HTMLDivElement
 const elprops_title = document.getElementById("title") as HTMLHeadingElement
@@ -700,7 +725,249 @@ function raf() {
       break
     }
   }
+
+  render_bsp()
 }
+
+// https://groups.csail.mit.edu/graphics/classes/6.838/S98/meetings/m13/bsp.html#:~:text=Let%20v%20be,return%20hit
+
+export type Segment = {
+  readonly a: Point2d,
+  readonly b: Point2d,
+  readonly wall: Wall,
+};
+export type BSP = {
+  splitter: Segment
+  front: BSP | undefined,
+  back: BSP | undefined,
+}
+const ray1: Point2d = { x: 0, y: 0 }
+const ray2: Point2d = { x: 0, y: 0 }
+function render_bsp() {
+  if (bsp === undefined) {
+    build_bsp()
+  }
+  const offsetX = camX - canvas.width / (2 * zoom)
+  const offsetY = camY - canvas.height / (2 * zoom)
+  ray2.x = cursor_x_m
+  ray2.y = cursor_y_m
+
+  ctx.lineWidth = 4
+  ctx.fillStyle = "#050"
+  function render_node(bsp: BSP | undefined, depth: number, dir,): void {
+    if (bsp === undefined) {
+      return
+    }
+    const ax = zoom * (bsp.splitter.a.x - offsetX)
+    const ay = zoom * (bsp.splitter.a.y - offsetY)
+    const bx = zoom * (bsp.splitter.b.x - offsetX)
+    const by = zoom * (bsp.splitter.b.y - offsetY)
+    ctx.fillStyle = ctx.strokeStyle = `hsl(${depth * 120} 80 ${20 + depth * 10})`
+    if (len_vec(sub_vec(ray2, bsp.splitter.a)) < 0.1) {
+      ctx.fillStyle = ctx.strokeStyle = `hsl(0 80 100)`
+    }
+    ctx.beginPath()
+    ctx.moveTo(ax, ay)
+    ctx.lineTo(bx, by)
+    const splitter_mid = mul_vec(add_vec(bsp.splitter.a, bsp.splitter.b), 0.5)
+    const splitter_dir = sub_vec(bsp.splitter.a, bsp.splitter.b)
+    const splitter_norm = add_vec(splitter_mid, mul_vec(orthogonal(splitter_dir), 0.1))
+    ctx.moveTo(zoom * (splitter_mid.x - offsetX), zoom * (splitter_mid.y - offsetY))
+    ctx.lineTo(zoom * (splitter_norm.x - offsetX), zoom * (splitter_norm.y - offsetY))
+    ctx.closePath()
+    ctx.stroke()
+    ctx.arc(ax, ay, 5, 0, 2 * Math.PI);
+    ctx.closePath()
+    ctx.arc(bx, by, 5, 0, 2 * Math.PI);
+    ctx.fill()
+    ctx.textAlign = "center"
+    ctx.font = "bold 18px sans-serif"
+    ctx.fillStyle = "#222"
+    ctx.fillText(dir, zoom * (splitter_norm.x - offsetX), zoom * (splitter_norm.y - offsetY))
+    render_node(bsp.front, depth + 1, dir + "f")
+    render_node(bsp.back, depth + 1, dir + "b")
+  }
+
+  render_node(bsp, 0, "_")
+
+  ctx.beginPath();
+  // ctx.ellipse(ray1.x - camX, ray1.y - camY, 16, 16, 0, 0, 180)
+  ctx.arc((ray1.x - offsetX) * zoom, (ray1.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
+  ctx.arc((ray2.x - offsetX) * zoom, (ray2.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
+  const int = intersect(bsp, ray1, ray2)
+  if (int !== undefined) {
+    ctx.arc((int.x - offsetX) * zoom, (int.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
+  }
+  ctx.fill()
+}
+
+let bsp: BSP | undefined = undefined
+function intersect(bsp: BSP, r0: Point2d, r1: Point2d): Point2d | undefined {
+
+  const q = r0
+  const p = bsp.splitter.a
+  const s = sub_vec(r1, r0)
+  const r = sub_vec(bsp.splitter.b, bsp.splitter.a)
+  // t = (q − p) × s / (r × s)
+  // u = (q − p) × r / (r × s)
+  const qp = sub_vec(q, p)
+  const rs = cross_prod(r, s)
+  const rs_zero = Math.abs(rs) < 0.00001
+  const qps = cross_prod(qp, s)
+  const qpr = cross_prod(qp, r)
+
+  // const ray_dir = sub_vec(r1, r0)
+  // const segment_dir = sub_vec(bsp.splitter.b, bsp.splitter.a)
+  // const numerator = cross_prod(sub_vec(bsp.splitter.a, r0), ray_dir)
+  // const denominator = cross_prod(ray_dir, segment_dir)
+
+  // const numerator_is_zero = Math.abs(numerator) < 0.00001
+
+  let near: BSP | undefined
+  let far: BSP | undefined
+  // if (numerator < 0 || (numerator_is_zero && denominator > 0)) {
+  if (qpr < 0 || (Math.abs(qpr) < 0.00001 && rs > 0)) {
+    near = bsp.front
+    far = bsp.back
+  } else {
+    near = bsp.back
+    far = bsp.front
+  }
+  if (near !== undefined) {
+    const hit = intersect(near, r0, r1)
+    if (hit !== undefined) {
+      return hit
+    }
+  }
+
+  // if the denominator is zero the lines are parallel
+  // if (Math.abs(denominator) < 0.00001) {
+  if (rs_zero) {
+    return undefined
+  }
+
+  const t = qps / rs
+  const u = qpr / rs
+
+  // intersection is the point on a line segment where the line divides it
+  // const intersection = numerator / denominator
+
+  // segments that are not parallel and t is in (0, 1) should be divided
+  // if (0.0 < intersection && intersection < 1.0) {
+  //   return add_vec(bsp.splitter.a, mul_vec(segment_dir, intersection))
+  // }
+  if (u > 0 && 0 < t && t < 1) {
+    return add_vec(q, mul_vec(s, u))
+  }
+
+  if (far !== undefined) {
+    return intersect(far, r0, r1)
+  }
+  return undefined
+}
+function build_bsp() {
+  if (app_state.config !== undefined) {
+    const segments = app_state.config.walls.map((w) => { return {a: w.a, b: w.b, wall: w } })
+    bsp = build_sub_tree(segments)
+    console.dir(bsp)
+  }
+}
+function build_sub_tree(segments: Segment[]): BSP | undefined {
+  if (segments.length === 0) {
+    return undefined
+  }
+
+  let best_front: Segment[]  = []
+  let best_back: Segment[] = []
+  let best_splitter: Segment = segments[0]
+
+  for (let i = 256; i !== 0; i--) {
+    const [splitter, front, back] = bsp_split(segments)
+
+    const imbalance = Math.abs(front.length - back.length)
+    const best_imbalance = Math.abs(best_front.length - best_back.length)
+    if (best_front.length + best_back.length === 0 || imbalance < best_imbalance || best_front.length + best_back.length > front.length + back.length) {
+      best_front = front
+      best_back = back
+      best_splitter = splitter
+    }
+  }
+
+  return {
+    splitter: best_splitter,
+    front: build_sub_tree(best_front),
+    back: build_sub_tree(best_back),
+  }
+}
+function bsp_split(segments: Segment[]): [Segment, Segment[], Segment[]] {
+  const splitter = segments[Math.floor(Math.random() * segments.length)]
+  const splitter_dir = sub_vec(splitter.b, splitter.a)
+
+  const front_segments: Segment[] = []
+  const back_segments: Segment[] = []
+
+  for (const segment of segments) {
+    if (Object.is(segment, splitter)) {
+      continue
+    }
+    const segment_dir = sub_vec(segment.b, segment.a)
+    const numerator = cross_prod(sub_vec(segment.a, splitter.a), splitter_dir)
+    const denominator = cross_prod(splitter_dir, segment_dir)
+
+    // if the denominator is zero the lines are parallel
+    const denominator_is_zero = Math.abs(denominator) < 0.00001
+
+    // segments are collinear if they are parallel and the numerator is zero
+    const numerator_is_zero = Math.abs(numerator) < 0.00001
+
+    if (!denominator_is_zero) {
+      // intersection is the point on a line segment where the line divides it
+      const intersection = numerator / denominator
+
+      // segments that are not parallel and t is in (0, 1) should be divided
+      if (0.0 < intersection && intersection < 1.0) {
+        const intersection_point = add_vec(segment.a, mul_vec(segment_dir, intersection))
+
+        let r_segment = {
+          a: segment.a,
+          b: intersection_point,
+          wall: segment.wall,
+        }
+
+        let l_segment = {
+          a: intersection_point,
+          b: segment.b,
+          wall: segment.wall,
+        }
+
+        if (numerator > 0) {
+          const t = l_segment
+          l_segment = r_segment
+          r_segment = t
+        }
+
+        front_segments.push(r_segment)
+        back_segments.push(l_segment)
+        continue
+      }
+    }
+
+    if (numerator < 0 || (numerator_is_zero && denominator > 0)) {
+      front_segments.push(segment)
+    } else {
+      back_segments.push(segment)
+    }
+  }
+  return [splitter, front_segments, back_segments]
+}
+requestAnimationFrame(build_bsp)
+
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space") {
+    ray1.x = ray2.x
+    ray1.y = ray2.y
+  }
+})
 
 function resize() {
   console.log("onresize")
@@ -806,6 +1073,7 @@ if (app_state.app_config.latest_config) {
   app_state.config = await get_config(app_state.config_path)
   appWindow.setTitle("[" + app_state.config_path.split("\\").pop() + "] – " + "5G Planner ")
   center_view()
+  zoom = zoom_target
 }
 
 raf()
@@ -819,4 +1087,7 @@ function normalize(vec: Point2d): Point2d {
     x: vec.x / len,
     y: vec.y / len,
   }
+}
+function orthogonal(vec: Point2d): Point2d {
+  return normalize({x: vec.y, y: -vec.x})
 }
