@@ -7,11 +7,11 @@ use std::time::{Duration, Instant};
 use rand::{Rng, SeedableRng};
 use serde::Serialize;
 
-use crate::heatmap::{self, is_inside, bounding_box, pix_to_meter, dbm_after_walls, STATIC_NOISE_DBM, dbm_to_mw, mw_to_dbm};
-use crate::room_state::{get_state, Pos, Px, RoomState};
+use crate::heatmap::{self, bounding_box, dbm_after_walls, dbm_to_mw, is_inside, mw_to_dbm, pix_to_meter, BSP, STATIC_NOISE_DBM};
+use crate::room_state::{get_state, Pos, Px, RoomLayout};
 use crate::RUNNING;
 
-pub struct RoomState2 {
+pub struct SignalStrength {
   /// dBm
   pub points_signal_dbm: Vec<f64>,
 }
@@ -22,7 +22,7 @@ struct ParamRanges {
   pub points_limits_mws: Vec<(f64, f64)>,
 }
 
-fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &RoomState2, regular_state: &RoomState) -> (f64, f64) {
+fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &SignalStrength, layout: &RoomLayout, bsp: &BSP) -> (f64, f64) {
   let mut signal_t = 0f64;
   let mut noise_t = 0f64;
   let mut min_sinr = f64::MAX;
@@ -31,7 +31,7 @@ fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &Room
     for x in 0..bb.res.0 {
       let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
 
-      let desired_point_id = regular_state.radio_zones
+      let desired_point_id = layout.radio_zones
         .iter()
         .find(|zone| is_inside(pix, zone))
         .map(|v| v.desired_point_id);
@@ -42,10 +42,10 @@ fn solve_slice(bb: &BoundingBoxes, y_from: usize, y_to: usize, this_guess: &Room
       };
 
       // Рассматриваем каждую точку доступа
-      let mwts: Vec<f64> = regular_state.radio_points
+      let mwts: Vec<f64> = layout.radio_points
         .iter()
         .zip(this_guess.points_signal_dbm.iter())
-        .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
+        .map(|(point, power_dbm)| dbm_after_walls(&layout, bsp, pix, point, *power_dbm))
         .collect();
 
       let signal_mw = mwts[desired_point_id];
@@ -107,7 +107,7 @@ pub static RENDERING_BB: Mutex<BoundingBoxes> = Mutex::new(BoundingBoxes::ZERO);
 pub async fn do_montecarlo() {
   let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
-  let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<(Arc<RoomState>, Arc<RoomState2>, Arc<BoundingBoxes>)>>(None);
+  let (best_tx, mut best_rx) = tokio::sync::watch::channel::<Option<(Arc<RoomLayout>, Arc<BSP>, Arc<SignalStrength>, Arc<BoundingBoxes>)>>(None);
 
   {
     tokio::spawn(async move {
@@ -116,12 +116,12 @@ pub async fn do_montecarlo() {
         println!("iter_rx");
         let new_state = best_rx.borrow().as_ref().map(|v| v.clone());
         if let Some(ns) = new_state {
-          let (rs1, rs2, render) = ns;
+          let (layout, bsp, signals, render) = ns;
           {
-            heatmap::next_image(render.clone(), rs1.clone(), rs2.clone()).await;
+            heatmap::next_image(render.clone(), layout.clone(), bsp.clone(), signals.clone()).await;
             *RENDERING_BB.lock().unwrap() = BoundingBoxes::clone(&render);
           }
-          tokio::time::sleep(Duration::from_secs(2)).await;
+          tokio::time::sleep(Duration::from_millis(500)).await;
         }
       }
       println!("left rx");
@@ -140,12 +140,12 @@ pub async fn do_montecarlo() {
 
       let mut receiver = get_state().subscribe();
 
-
-      let mut state = Arc::new(RoomState {
+      let mut layout = Arc::new(RoomLayout {
         walls: vec![],
         radio_points: vec![],
         radio_zones: vec![],
       });
+      let mut bsp = BSP::new(&layout);
       let mut measure = BoundingBoxes::default();
       let mut render = Arc::new(BoundingBoxes::default());
       let mut limits = ParamRanges { points_limits_mws: vec![] };
@@ -156,7 +156,7 @@ pub async fn do_montecarlo() {
 
       let mut local_max_sinr = f64::NEG_INFINITY;
 
-      'monte_carlo: loop {
+      loop {
         if iterations & 0b11 == 0 {
           while !RUNNING.load(Ordering::SeqCst) {
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -169,11 +169,12 @@ pub async fn do_montecarlo() {
               println!("Iterations: {}", iterations * threads);
 
               if let Ok(true) = receiver.has_changed() {
-                state = Arc::new(receiver.borrow_and_update().clone());
-                measure = BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64);
-                render = Arc::new(BoundingBoxes::new(state.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
+                layout = Arc::new(receiver.borrow_and_update().clone());
+                measure = BoundingBoxes::new(layout.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 64*64);
+                render = Arc::new(BoundingBoxes::new(layout.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
+                bsp = BSP::new(&layout);
                 limits = ParamRanges {
-                  points_limits_mws: state.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
+                  points_limits_mws: layout.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
                 };
                 println!("{:?}", limits);
                 println!("measure {:?}\nrender {:?}\n\n", measure, render);
@@ -184,12 +185,12 @@ pub async fn do_montecarlo() {
           tokio::task::yield_now().await;
         }
         iterations += 1;
-        let next_guess = RoomState2 {
+        let next_guess = SignalStrength {
           points_signal_dbm: limits.points_limits_mws.iter().map(|(min, max)| mw_to_dbm(rng.gen_range(*min..=*max))).collect(),
           // points_signal_dbm: limits.points_limits_dbm.iter().map(|_| mw_to_dbm(190f64)).collect(),
         };
 
-        let (sinr_avg, min_sinr_dbm) = solve_slice(&measure, 0, measure.res.1, &next_guess, &state);
+        let (sinr_avg, _min_sinr_dbm) = solve_slice(&measure, 0, measure.res.1, &next_guess, &layout, &bsp);
         // if min_sinr_dbm < 400.0 && min_sinr_dbm > super_uper_min {
         //   super_uper_min = min_sinr_dbm;
         //   println!("min_sinr: {min_sinr_dbm}dbm");
@@ -204,7 +205,7 @@ pub async fn do_montecarlo() {
             *gms = local_max_sinr;
             drop(gms);
             println!("min_sinr_sum: {sinr_avg}mw");
-            best_tx.send(Some((state.clone(), Arc::new(next_guess), render.clone()))).unwrap();
+            best_tx.send(Some((layout.clone(), bsp.clone(), Arc::new(next_guess), render.clone()))).unwrap();
           }
         }
       }

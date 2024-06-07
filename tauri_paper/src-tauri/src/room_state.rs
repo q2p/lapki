@@ -1,4 +1,3 @@
-use std::borrow::Borrow;
 use std::sync::Arc;
 use std::sync::{atomic::Ordering, Mutex};
 use std::str::FromStr;
@@ -52,7 +51,7 @@ pub struct Px {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RoomState {
+pub struct RoomLayout {
   pub walls: Vec<Wall>,
   pub radio_points: Vec<RadioPoint>,
   pub radio_zones: Vec<RadioZone>,
@@ -89,6 +88,14 @@ impl Pos {
   }
 
   pub const ZERO: Pos = Pos::new(0.0, 0.0);
+
+  pub fn dot(v1: &Pos, v2: &Pos) -> f64 {
+    v1.x * v2.x + v1.y * v2.y
+  }
+
+  pub fn cross(v1: &Pos, v2: &Pos) -> f64 {
+    v1.x * v2.y - v1.y * v2.x
+  }
 }
 
 impl Px {
@@ -97,10 +104,10 @@ impl Px {
   }
 }
 
-static STATE: Mutex<Option<Arc<Sender<RoomState>>>> = Mutex::new(None);
-pub fn get_state() -> Arc<Sender<RoomState>> {
+static STATE: Mutex<Option<Arc<Sender<RoomLayout>>>> = Mutex::new(None);
+pub fn get_state() -> Arc<Sender<RoomLayout>> {
   return Arc::clone(&STATE.lock().unwrap().get_or_insert_with(|| {
-    Arc::new(Sender::new(RoomState {
+    Arc::new(Sender::new(RoomLayout {
       walls: Vec::new(),
       radio_points: Vec::new(),
       radio_zones: Vec::new(),
@@ -120,7 +127,7 @@ pub static RANGE: Mutex<Range> = Mutex::new(Range {
   pow: 16.0,
 });
 
-pub fn write_config(config: RoomState, path: &str) {
+pub fn write_config(config: RoomLayout, path: &str) {
   let json = serde_json::to_string(&config).unwrap();
   {
     let _ = get_state().send_replace(config);
@@ -135,8 +142,8 @@ pub fn load_config(path: &str) {
   }
 }
 
-pub fn get_config2() -> RoomState {
-  let a: RoomState = Sender::borrow(&get_state()).clone();
+pub fn get_config2() -> RoomLayout {
+  let a: RoomLayout = Sender::borrow(&get_state()).clone();
   return a;
 }
 
@@ -163,13 +170,13 @@ pub fn should_play(should_play: bool) {
 }
 
 #[tauri::command]
-pub fn get_config(path: &str) -> RoomState {
+pub fn get_config(path: &str) -> RoomLayout {
   load_config(path);
   return Sender::borrow(&get_state()).clone();
 }
 
 #[tauri::command]
-pub fn save_config(config: RoomState, path: &str) {
+pub fn save_config(config: RoomLayout, path: &str) {
   write_config(config, path)
 }
 

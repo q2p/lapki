@@ -3,15 +3,13 @@
 
 use std::fs::File;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
-use std::time::Duration;
 
 use random_tries::do_montecarlo;
 use serde::{Deserialize, Serialize};
 use tauri::{CustomMenuItem, Manager, Menu, MenuEntry, MenuItem, Submenu};
 
-mod geometry;
 mod heatmap;
 mod random_tries;
 mod room_state;
@@ -127,7 +125,6 @@ fn main() {
                 _ => {}
             }
         })
-        .on_page_load(|window, payload| {})
         .setup(|_| {
             tauri::async_runtime::spawn(do_montecarlo());
             Ok(())

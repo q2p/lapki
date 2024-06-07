@@ -3,15 +3,15 @@ use std::io::BufWriter;
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
+use std::{mem, ptr};
 use std::sync::{RwLock, Arc, Mutex};
 
 use serde::Serialize;
-use std::time::Duration;
 
 use rand::Rng;
 
-use crate::random_tries::{chop_ys, RoomState2, BoundingBoxes};
-use crate::room_state::{Pos, Px, RoomState, RadioZone, RadioPoint, Range, RANGE};
+use crate::random_tries::{chop_ys, SignalStrength, BoundingBoxes};
+use crate::room_state::{Pos, Px, RadioPoint, RadioZone, RoomLayout, Wall, RANGE};
 
 /// 5 GHz
 const CARRYING_FREQ: f64 = 5f64;
@@ -31,22 +31,6 @@ struct Segment {
 
 struct State {
   scene: Box<[u8]>,
-}
-
-// Вызывается по таймеру и перерисовывает картинку
-pub async fn next_image(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
-  // let mut rng = StdRng::from_entropy();
-  // let shit_room = Arc::new(RoomState2 {
-  //   points_signal_dbm: vec![mw_to_dbm(10.0), mw_to_dbm(45.0), mw_to_dbm(15.0)],
-  // });
-  next_image1(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  // next_image2(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  // next_image3(bb.clone(), regular_state.clone(), next_guess.clone()).await;
-  do_image2(bb.clone(), regular_state.clone(), next_guess.clone(), "../rimg3.png").await;
-  // let shitroom = RoomState2 {
-  //   points_signal_dbm: vec![50.0, 1000.0, 1.0],
-  // };
-  // do_image2(bb.clone(), regular_state.clone(), shit_room.clone(), "../rimg4.png").await;
 }
 
 pub fn length(a: Pos, b: Pos) -> f64 {
@@ -128,101 +112,9 @@ fn distance_to_zone(pix: Pos, zone: &RadioZone) -> f64 {
   return min_len;
 }
 
-// Вызывается по таймеру и перерисовывает картинку
-pub async fn next_image1(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
-  let range: Arc<Range> = { Arc::new(Range::clone(&RANGE.lock().unwrap())) };
-  do_image(bb, regular_state.clone(), "../rimg1.png", Arc::new(move |pix| {
-    // Рассматриваем каждую точку доступа
-
-    // Считаем силу сигнала и запоминаем самый сильный
-    let dbm = regular_state.radio_points
-      .iter()
-      .zip(next_guess.points_signal_dbm.iter())
-      .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
-      .reduce(f64::min)
-      .unwrap_or(0f64);
-
-    // Обрезаем верхний и нижние участки выходящие за допустимые границы
-    let mut s = scale_dbs(dbm, range.as_ref());
-    // println!("{dBm}");
-    // let mut s = ((dBm-0.35)*100.0).clamp(0.0, 1.0);
-    // Делаем плавные переходы ступенчатыми (40 ступеней)
-    s = (s * 40.0) as u8 as f64 / 40.0;
-    // Градиент переходов между цветами
-    const GRAD: [Segment; 8] = [
-      Segment { t: -1.000, r: 0xFF, g: 0x00, b: 0x00, },
-      Segment { t: -0.000, r: 0xFF, g: 0x00, b: 0x00, },
-      Segment { t:  0.200, r: 0xFF, g: 0xCF, b: 0x00, },
-      Segment { t:  0.400, r: 0x00, g: 0xCF, b: 0x00, },
-      Segment { t:  0.600, r: 0x00, g: 0xCF, b: 0xFF, },
-      Segment { t:  0.800, r: 0x00, g: 0x00, b: 0xFF, },
-      Segment { t:  1.000, r: 0xFF, g: 0xFF, b: 0xFF, },
-      Segment { t:  2.000, r: 0xFF, g: 0xFF, b: 0xFF, },
-    ];
-    let mut r = 0;
-    let mut g = 0;
-    let mut b = 0;
-    for i in 0..(GRAD.len()-1) {
-      let g0 = &GRAD[i+0];
-      let g1 = &GRAD[i+1];
-      // Проверяем, попадаем ли мы в нужный диапазон
-      if s >= g0.t && s <= g1.t {
-        let t = (s - g0.t) / (g1.t - g0.t);
-        r = (g0.r as f64 * (1.0 - t) + g1.r as f64 * t) as u8;
-        g = (g0.g as f64 * (1.0 - t) + g1.g as f64 * t) as u8;
-        b = (g0.b as f64 * (1.0 - t) + g1.b as f64 * t) as u8;
-        break;
-      }
-    }
-    return (r, g, b);
-  })).await;
-}
-
-// Задаём область силы сигнала которую сможем отобразить
-// Если сигнал выходит за рамки [0.20, 0.31], то он обрезается.
-const DBMIN: f64 = 0.31;
-const DBMAX: f64 = 0.368;
-// Чтобы цвета было легче различать, мы должны привратить децибеллы,
-// в другую величину, которая более линейна, чтобы цвета были расположены
-// более равномерно
-const DBPOW: f64 = 16.0;
-fn scale_dbs(dbm: f64, range: &Range) -> f64 {
-  scale_dbs2(dbm, range.min, range.max, range.pow)
-}
 fn scale_dbs2(v: f64, min: f64, max: f64, pow: f64) -> f64 {
   ((v - min) / (max - min)).clamp(0.0, 1.0).powf(pow)
 }
-
-// // Вызывается по таймеру и перерисовывает картинку
-// pub async fn next_image2(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
-//   do_image(bb, regular_state.clone(), "../rimg2.png", Arc::new(move |pix| {
-//     // Рассматриваем каждую точку доступа
-//     let dbms: Vec<f64> = regular_state.radio_points
-//       .iter()
-//       .zip(next_guess.points_signal.iter())
-//       .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
-//       .collect();
-
-//     const P: f64 = 2.0;
-
-//     let mut A = [0.0, 0.0, 0.0];
-//     let mut B = [0.0, 0.0, 0.0];
-//     for zone in regular_state.radio_zones.iter() {
-//       let zone_rgb = [zone.r, zone.g, zone.b];
-//       let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
-//       for i in 0..3 {
-//         let color = zone_rgb[i] as f64;
-//         A[i] += color / d;
-//         B[i] += 1.0 / d;
-//       }
-//     }
-//     return (
-//       (A[0] / B[0]).clamp(0.0, 255.0) as u8,
-//       (A[1] / B[1]).clamp(0.0, 255.0) as u8,
-//       (A[2] / B[2]).clamp(0.0, 255.0) as u8,
-//     )
-//   })).await;
-// }
 
 pub fn dbm_to_mw(dbm: f64) -> f64 {
   10f64.powf(dbm / 10f64)
@@ -233,52 +125,44 @@ pub fn mw_to_dbm(mw: f64) -> f64 {
 }
 
 // Вызывается по таймеру и перерисовывает картинку
-pub async fn next_image3(bb: Arc<BoundingBoxes>, regular_state: Arc<RoomState>, next_guess: Arc<RoomState2>) {
-  do_image(bb, regular_state.clone(), "../rimg3.png", Arc::new(move |pix| {
-    // Рассматриваем каждую точку доступа
-    let mwts: Vec<f64> = regular_state.radio_points
-      .iter()
-      .zip(next_guess.points_signal_dbm.iter())
-      .map(|(point, power_dbm)| dbm_after_walls(&regular_state, pix, point, *power_dbm))
-      .collect();
+pub async fn do_parallel<'a, T>(
+  bb: Arc<BoundingBoxes>,
+  starting_t: &mut T,
+  map: Arc<impl Fn(Pos, &mut T) -> () + Send + Sync + 'static>,
+  reduce: impl Fn(&mut T, T) -> () + Send + Sync + 'static,
+) where
+T: Clone + Send + Sync + 'static,
+{
+  let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
 
-    const P: f64 = 2.0;
+  let mut queued = Vec::with_capacity(threads);
 
-    let mut A = [ 0.0, 0.0, 0.0 ];
-    let mut B = [ 0.0, 0.0, 0.0 ];
-    for zone in regular_state.radio_zones.iter() {
-      let zone_rgb = [zone.r, zone.g, zone.b];
-      let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
-      let signal = mwts[zone.desired_point_id];
-      let all_signals = mwts.iter().sum::<f64>();
-      let noise_and_interference = all_signals - signal;
-      // signal - all signals = (s)/(s+i+n)
-      // max limit: 400mw на точке доступа
-      // min limit: -5db в худшей точке зоны.
-      let sinr = mw_to_dbm(signal / (noise_and_interference + dbm_to_mw(STATIC_NOISE_DBM)));
+  for (y_from, y_to, _) in chop_ys(bb.res.1, threads) {
+    let map = map.clone();
+    let bb = bb.clone();
 
-      let sinr_01 = sinr;
-      let sinr_01 = scale_dbs2(sinr_01, 0.1125, 0.1377, 2.5);
+    let mut merged = starting_t.clone();
 
-      for i in 0..3 {
-        // let color = 255.0 * noise_to_all + zone_rgb[i] as f64 * sig_to_all;
-        let color = 255.0 * sinr_01 + zone_rgb[i] as f64 * (1.0 - sinr_01);
-        A[i] += color / d;
-        B[i] += 1.0 / d;
+    queued.push(tauri::async_runtime::spawn(async move {
+      for y in y_from..y_to {
+        for x in 0..bb.res.0 {
+          let pixel = pix_to_meter(&bb, Px::new(x as isize, y as isize));
+
+          let _: () = (map)(pixel, &mut merged);
+        }
       }
-    }
-    return (
-      (A[0] / B[0]).clamp(0.0, 255.0) as u8,
-      (A[1] / B[1]).clamp(0.0, 255.0) as u8,
-      (A[2] / B[2]).clamp(0.0, 255.0) as u8,
-    )
-  })).await;
+
+      return merged;
+    }));
+  }
+  for queued in queued {
+    let _: () = (reduce)(starting_t, queued.await.unwrap());
+  }
 }
 
 // Вызывается по таймеру и перерисовывает картинку
 pub async fn do_image<'a, F>(
   bb: Arc<BoundingBoxes>,
-  regular_state: Arc<RoomState>,
   png_path: &'static str,
   func: Arc<F>,
 ) where
@@ -308,9 +192,9 @@ F: Fn(Pos) -> (u8, u8, u8) + Send + Sync + 'static,
           // Закрашиваем пиксель
           unsafe {
             let offset = state.as_ptr().add((y * bb.res.0 + x) * 3) as *mut u8;
-            core::ptr::write(offset.add(0), r);
-            core::ptr::write(offset.add(1), g);
-            core::ptr::write(offset.add(2), b);
+            ptr::write(offset.add(0), r);
+            ptr::write(offset.add(1), g);
+            ptr::write(offset.add(2), b);
           }
         }
       }
@@ -350,7 +234,7 @@ pub fn get_active_best() -> Vec<ActiveBestZone> {
   ACTIVE_BEST.lock().unwrap().zones.clone()
 }
 
-fn sum_dBm(dbm1: f64, dbm2: f64) -> f64 {
+fn sum_dbm(dbm1: f64, dbm2: f64) -> f64 {
   if dbm1 < dbm2 {
     return dbm1 + 10.0 * f64::log10(1.0 + f64::powf(10.0, (dbm2 - dbm1) / 10.0));
   } else {
@@ -359,13 +243,17 @@ fn sum_dBm(dbm1: f64, dbm2: f64) -> f64 {
 }
 
 fn do_calc_sinr_dbm(
-  regular_state: &RoomState,
-  next_guess: &RoomState2,
+  room_layout: &RoomLayout,
+  bsp: &BSP,
+  next_guess: &SignalStrength,
   zone: &RadioZone,
   pix: Pos,
 ) -> f64 {
-  let dbms = calc_powers_dbm(regular_state, next_guess, pix);
+  let dbms = calc_powers_dbm(room_layout, &bsp, next_guess, pix);
+  return powers_to_sinr(&dbms, zone);
+}
 
+fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {
   // let signal_mw = mwts[zone.desired_point_id];
   // let all_signals_mw = mwts.iter().sum::<f64>();
   // let interference_mw = all_signals_mw - signal_mw;
@@ -375,16 +263,16 @@ fn do_calc_sinr_dbm(
 
   for (i, dbm) in dbms.iter().enumerate() {
     if i == zone.desired_point_id {
-      signal_dbm = sum_dBm(signal_dbm, *dbm);
+      signal_dbm = sum_dbm(signal_dbm, *dbm);
     } else {
-      interference_dbm = sum_dBm(interference_dbm, *dbm);
+      interference_dbm = sum_dbm(interference_dbm, *dbm);
     }
   }
 
   // signal - all signals = (s)/(s+i+n)
   // max limit: 400mw на точке доступа
   // min limit: -5db в худшей точке зоны.
-  let int_noise_dbm = sum_dBm(interference_dbm, STATIC_NOISE_DBM);
+  let int_noise_dbm = sum_dbm(interference_dbm, STATIC_NOISE_DBM);
   // let int_noise_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
   let sinr = mw_to_dbm(dbm_to_mw(signal_dbm) / dbm_to_mw(int_noise_dbm));
   // let sinr = mw_to_dbm(signal_mw / int_noise);
@@ -411,76 +299,53 @@ fn do_calc_sinr_dbm(
 }
 
 // Вызывается по таймеру и перерисовывает картинку
-pub async fn do_image2(
+pub async fn next_image(
   bb: Arc<BoundingBoxes>,
-  regular_state: Arc<RoomState>,
-  next_guess: Arc<RoomState2>,
-  rimg_path: &str,
+  room_layout: Arc<RoomLayout>,
+  bsp: Arc<BSP>,
+  next_guess: Arc<SignalStrength>,
 ) {
-  let threads = std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN).get();
-
-  let mut queued = Vec::with_capacity(threads);
-
-  for (y_from, y_to, _) in chop_ys(bb.res.1, 1) {
-    let bb = bb.clone();
-    let regular_state = regular_state.clone();
+  let mut min_max_sinr_per_zone = vec![(f64::MAX, f64::MIN, f64::MAX, Pos { x: 0.0, y: 0.0 }); room_layout.radio_zones.len()].into_boxed_slice();
+  {
     let next_guess = next_guess.clone();
-
-    queued.push(tauri::async_runtime::spawn(async move {
-      // Перебираем все пиксели на холсте
-      let mut min_max_sinr_per_zone = vec![(f64::MAX, f64::MIN, Pos { x: 0.0, y: 0.0 }); regular_state.radio_zones.len()].into_boxed_slice();
-
-      for y in y_from..y_to {
-        for x in 0..bb.res.0 {
-          let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
-
-          // Рассматриваем каждую точку доступа
-          let dbms = calc_powers_dbm(&regular_state, &next_guess, pix);
-
-          for (zone, (min, max, min_xy)) in regular_state.radio_zones.iter().zip(min_max_sinr_per_zone.iter_mut()) {
-            //if is_inside(pix, zone) {
-              let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
-
-              if sinr < *min {
-                *min = sinr;
-                *min_xy = pix;
-              }
-              if sinr > *max {
-                *max = sinr;
-                // println!("Max SINR: signal {signal_mw}mw, sum {all_signals_mw}mw, int {int_noise}mw, sinr {}x, sinr {}db, dist {}m",
-                //   signal_mw / int_noise,
-                //   sinr,
-                //   length(pix, regular_state.radio_points[zone.desired_point_id].pos)
-                // )
-              }
-            // }
+    let room_layout = room_layout.clone();
+    let bsp = bsp.clone();
+    do_parallel::<Box<[_]>>(bb.clone(), &mut min_max_sinr_per_zone, Arc::new(move |pix, res: &mut Box<[(f64, f64, f64, Pos)]>| {
+      for ((min, max, min_pwr, min_xy), zone) in res.iter_mut().zip(room_layout.radio_zones.iter()) {
+        if is_inside(pix, zone) {
+          let dbms = calc_powers_dbm(&room_layout, &bsp, &next_guess, pix);
+          let sinr = powers_to_sinr(&dbms, zone);
+          let power_dbm = dbms[zone.desired_point_id];
+          if power_dbm < *min_pwr {
+            *min_pwr = power_dbm;
+          }
+          if sinr < *min {
+            *min = sinr;
+            *min_xy = pix;
+          }
+          if sinr > *max {
+            *max = sinr;
           }
         }
       }
-
-      min_max_sinr_per_zone
-    }));
-  }
-
-  let mut global_sinr_min_max = vec![(f64::MAX, f64::MIN, Pos { x: 0.0, y: 0.0 }); regular_state.radio_zones.len()].into_boxed_slice();
-  for queued in queued {
-    let smallest_sinr_per_zone = queued.await.unwrap();
-    for ((g_min, g_max, g_pos), (l_min, l_max, l_pos)) in global_sinr_min_max.iter_mut().zip(smallest_sinr_per_zone.into_iter()) {
-      *g_max = g_max.max(*l_max);
-      if l_min < g_min {
-        *g_min = *l_min;
-        *g_pos = *l_pos;
+    }), move |res, new| {
+      for ((g_min, g_max, g_min_pwr, g_pos), (l_min, l_max, l_min_pwr, l_pos)) in res.iter_mut().zip(new.into_iter()) {
+        *g_max = g_max.max(*l_max);
+        *g_min_pwr = g_min_pwr.min(*l_min_pwr);
+        if l_min < g_min {
+          *g_min = *l_min;
+          *g_pos = *l_pos;
+        }
       }
-    }
+    }).await;
   }
-  let min_max_sinr_per_zone = Arc::<[_]>::from(global_sinr_min_max);
 
   let mut active_best = Vec::new();
 
-  for ((((min, max, pos), zone), pow), point_pos) in min_max_sinr_per_zone.iter()
-    .zip(regular_state.radio_zones.iter())
+  for ((((min, max, min_pwr, pos), zone), pow), point_pos) in min_max_sinr_per_zone.iter()
+    .zip(room_layout.radio_zones.iter())
     .zip(next_guess.points_signal_dbm.iter())
-    .zip(regular_state.radio_points.iter())
+    .zip(room_layout.radio_points.iter())
   {
     active_best.push(ActiveBestZone {
       point_x: point_pos.pos.x,
@@ -493,96 +358,184 @@ pub async fn do_image2(
       g: zone.g,
       b: zone.b,
     });
-    println!("zone: r{} g{} b{} => SINR Min: {}, SINR Max: {}, powers: {:?}", zone.r, zone.g, zone.b, min, max, next_guess.points_signal_dbm.as_slice())
+    println!("zone: r{} g{} b{} => SINR Min: {}, SINR Max: {}, min_pwr: {}, powers: {:?}", zone.r, zone.g, zone.b, min, max, min_pwr, next_guess.points_signal_dbm.as_slice())
+  }
+
+  let min_max_sinr_per_zone = Arc::<[_]>::from(min_max_sinr_per_zone);
+
+  {
+    let next_guess = next_guess.clone();
+    let room_layout = room_layout.clone();
+    let min_max_sinr_per_zone = min_max_sinr_per_zone.clone();
+    let bsp = bsp.clone();
+    do_image(bb.clone(), "../rimg3.png", Arc::new(move |pix| {
+      let mut A = [ 0.0, 0.0, 0.0 ];
+      let mut B = [ 0.0, 0.0, 0.0 ];
+      let iter = room_layout.radio_zones.iter()
+        .zip(min_max_sinr_per_zone.iter());
+      for (zone, (min_sinr, max_sinr, _min_pwr, _min_pos)) in iter {
+        let zone_rgb = [zone.r, zone.g, zone.b];
+        // let d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
+        let d = distance_to_zone(pix, zone).max(0.00001);
+
+        let sinr = do_calc_sinr_dbm(&room_layout, &bsp, &next_guess, zone, pix);
+        let sinr_01 = scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0);
+        let sinr_01 = (sinr_01 * 12.0).round() / 12.0;
+
+        for i in 0..3 {
+          let color = (255.0 * (1.0 - sinr_01)) + (zone_rgb[i] as f64 * sinr_01);
+          A[i] += color / d;
+          B[i] += 1.0 / d;
+        }
+      }
+
+      let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
+      let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
+      let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
+
+      return (r, g, b);
+    })).await;
+  }
+
+  {
+    let next_guess = next_guess.clone();
+    let room_layout = room_layout.clone();
+    let min_max_sinr_per_zone = min_max_sinr_per_zone.clone();
+    let bsp = bsp.clone();
+    let bb = bb.clone();
+    do_image(bb, "../rimg1.png", Arc::new(move |pix| {
+      let mut A = [ 0.0, 0.0, 0.0 ];
+      let mut B = [ 0.0, 0.0, 0.0 ];
+      let iter = room_layout.radio_zones.iter()
+        .zip(min_max_sinr_per_zone.iter());
+      for (zone, (min_sinr, max_sinr, _min_pwr, _min_pos)) in iter {
+        // let d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
+        let d = distance_to_zone(pix, zone).max(0.00001);
+
+        let sinr = do_calc_sinr_dbm(&room_layout, &bsp, &next_guess, zone, pix);
+        let s = scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0);
+
+        // Делаем плавные переходы ступенчатыми (40 ступеней)
+        let s = (s * 40.0).round() / 40.0;
+        // Градиент переходов между цветами
+        const GRAD: [Segment; 8] = [
+          Segment { t: -1.000, r: 0xFF, g: 0xFF, b: 0xFF, },
+          Segment { t: -0.000, r: 0xFF, g: 0xFF, b: 0xFF, },
+          Segment { t:  0.200, r: 0x00, g: 0x00, b: 0xFF, },
+          Segment { t:  0.400, r: 0x00, g: 0xCF, b: 0xFF, },
+          Segment { t:  0.600, r: 0x00, g: 0xCF, b: 0x00, },
+          Segment { t:  0.800, r: 0xFF, g: 0xCF, b: 0x00, },
+          Segment { t:  1.000, r: 0xFF, g: 0x00, b: 0x00, },
+          Segment { t:  2.000, r: 0xFF, g: 0x00, b: 0x00, },
+        ];
+        let mut rgb = [0.0;3];
+        for i in 0..(GRAD.len()-1) {
+          let g0 = &GRAD[i+0];
+          let g1 = &GRAD[i+1];
+          // Проверяем, попадаем ли мы в нужный диапазон
+          if s >= g0.t && s <= g1.t {
+            let t = (s - g0.t) / (g1.t - g0.t);
+            rgb[0] = g0.r as f64 * (1.0 - t) + g1.r as f64 * t;
+            rgb[1] = g0.g as f64 * (1.0 - t) + g1.g as f64 * t;
+            rgb[2] = g0.b as f64 * (1.0 - t) + g1.b as f64 * t;
+            break;
+          }
+        }
+        for i in 0..3 {
+          A[i] += rgb[i] as f64 / d;
+          B[i] += 1.0 / d;
+        }
+      }
+
+      let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
+      let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
+      let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
+
+      return (r, g, b);
+    })).await;
+  }
+
+  {
+    let next_guess = next_guess.clone();
+    let room_layout = room_layout.clone();
+    let min_max_sinr_per_zone = min_max_sinr_per_zone.clone();
+    let bsp = bsp.clone();
+    let bb = bb.clone();
+    do_image(bb, "../rimg2.png", Arc::new(move |pix| {
+      let mut A = [ 0.0, 0.0, 0.0 ];
+      let mut B = [ 0.0, 0.0, 0.0 ];
+      let mut dbms = calc_powers_dbm(&room_layout, &bsp, &next_guess, pix);
+      let iter = dbms.iter_mut()
+        .zip(min_max_sinr_per_zone.iter())
+        .zip(next_guess.points_signal_dbm.iter());
+      for ((dbm, (_min_sinr, _max_sinr, min_pwr, _min_pos)), power_dbm) in iter {
+        *dbm = scale_dbs2(*dbm, *min_pwr, *power_dbm, 1.0/4.0);
+      }
+      let iter = room_layout.radio_zones.iter()
+        .zip(dbms.iter());
+      for (zone, s) in iter {
+        // let d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
+        let d = distance_to_zone(pix, zone).max(0.00001);
+
+        // Делаем плавные переходы ступенчатыми (40 ступеней)
+        // let s = (s * 40.0).round() / 40.0;
+        let s = *s;
+        // Градиент переходов между цветами
+        const GRAD: [Segment; 8] = [
+          Segment { t: -1.000, r: 0xFF, g: 0x00, b: 0x00, },
+          Segment { t: -0.000, r: 0xFF, g: 0x00, b: 0x00, },
+          Segment { t:  0.200, r: 0xFF, g: 0xCF, b: 0x00, },
+          Segment { t:  0.400, r: 0x00, g: 0xCF, b: 0x00, },
+          Segment { t:  0.600, r: 0x00, g: 0xCF, b: 0xFF, },
+          Segment { t:  0.800, r: 0x00, g: 0x00, b: 0xFF, },
+          Segment { t:  1.000, r: 0xFF, g: 0xFF, b: 0xFF, },
+          Segment { t:  2.000, r: 0xFF, g: 0xFF, b: 0xFF, },
+        ];
+        let mut rgb = [0.0;3];
+        for i in 0..(GRAD.len()-1) {
+          let g0 = &GRAD[i+0];
+          let g1 = &GRAD[i+1];
+          // Проверяем, попадаем ли мы в нужный диапазон
+          if s >= g0.t && s <= g1.t {
+            let t = (s - g0.t) / (g1.t - g0.t);
+            rgb[0] = g0.r as f64 * (1.0 - t) + g1.r as f64 * t;
+            rgb[1] = g0.g as f64 * (1.0 - t) + g1.g as f64 * t;
+            rgb[2] = g0.b as f64 * (1.0 - t) + g1.b as f64 * t;
+            break;
+          }
+        }
+        for i in 0..3 {
+          A[i] += rgb[i] as f64 / d;
+          B[i] += 1.0 / d;
+        }
+      }
+
+      let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
+      let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
+      let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
+
+      return (r, g, b);
+    })).await;
   }
 
   {
     ACTIVE_BEST.lock().unwrap().zones = active_best;
   }
 
-  let state_arc = Arc::new(RwLock::new(vec![0u8; bb.res.0*bb.res.1*3].into_boxed_slice()));
-
-  let mut queued = Vec::with_capacity(threads);
-
-  for (y_from, y_to, _) in chop_ys(bb.res.1, threads) {
-    let state = state_arc.clone();
-    let bb = bb.clone();
-    let next_guess = next_guess.clone();
-    let regular_state = regular_state.clone();
-    let min_max_sinr_per_zone = min_max_sinr_per_zone.clone();
-
-    queued.push(tauri::async_runtime::spawn(async move {
-      let state = state.read().unwrap();
-      // Перебираем все пиксели на холсте
-      for y in y_from..y_to {
-        for x in 0..bb.res.0 {
-          let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
-
-          const P: f64 = 2.0;
-
-          let mut A = [ 0.0, 0.0, 0.0 ];
-          let mut B = [ 0.0, 0.0, 0.0 ];
-          let iter = regular_state.radio_zones.iter()
-            .zip(min_max_sinr_per_zone.iter())
-            .zip(next_guess.points_signal_dbm.iter());
-          for ((zone, (min_sinr, max_sinr, min_pos)), power_dbm) in iter {
-            let zone_rgb = [zone.r, zone.g, zone.b];
-            let d = distance_to_zone(pix, zone).powf(P).max(0.00001);
-
-            let sinr = do_calc_sinr_dbm(&regular_state, &next_guess, zone, pix);
-
-            if sinr < *min_sinr - 0.01 || sinr > *max_sinr + 0.01 {
-              std::thread::sleep(Duration::from_millis(rand::thread_rng().gen_range(1..200)));
-              panic!("MINMAXEXPGOT: {min_sinr} {max_sinr} {sinr}.");
-            }
-            let sinr_01 = scale_dbs2(sinr, *min_sinr, *max_sinr, 0.5);
-            let sinr_01 = (sinr * 12.0).round() / 12.0;
-
-            for i in 0..3 {
-              let color = (255.0 * (1.0 - sinr_01)) + (zone_rgb[i] as f64 * sinr_01);
-              A[i] += color / d;
-              B[i] += 1.0 / d;
-            }
-          }
-
-          let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
-          let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
-          let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
-
-          // Закрашиваем пиксель
-          unsafe {
-            let offset = state.as_ptr().add((y * bb.res.0 + x) * 3) as *mut u8;
-            core::ptr::write(offset.add(0), r);
-            core::ptr::write(offset.add(1), g);
-            core::ptr::write(offset.add(2), b);
-          }
-        }
-      }
-    }));
-  }
-  for queued in queued {
-    queued.await.unwrap();
-  }
-
   println!("drew");
-
-  let mut state = state_arc.write().unwrap();
-  let state = state.deref_mut().deref_mut();
-
-  save_image(bb.res, state, rimg_path);
 }
 
-fn calc_powers_dbm(regular_state: &RoomState, next_guess: &RoomState2, pix: Pos) -> Box<[f64]> {
-  regular_state.radio_points
+fn calc_powers_dbm(layout: &RoomLayout, bsp: &BSP, signal_strength: &SignalStrength, pix: Pos) -> Box<[f64]> {
+  layout.radio_points
     .iter()
-    .zip(next_guess.points_signal_dbm.iter())
-    .map(|(point, power_dbm)| dbm_after_walls(regular_state, pix, point, *power_dbm))
+    .zip(signal_strength.points_signal_dbm.iter())
+    .map(|(point, power_dbm)| dbm_after_walls(layout, bsp, pix, point, *power_dbm))
     .collect::<Vec<_>>()
     .into_boxed_slice()
 }
 
 // Находит силу сигнала от точки в определённом пикселе.
-pub fn dbm_after_walls(regular_state: &RoomState, pixel: Pos, point: &RadioPoint, power_dbm: f64) -> f64 {
+pub fn dbm_after_walls(room_layout: &RoomLayout, bsp: &BSP, pixel: Pos, point: &RadioPoint, power_dbm: f64) -> f64 {
   let power_dbm = mw_to_dbm(200.0);
 
   let mut length = length(point.pos, pixel).max(1.0);
@@ -593,7 +546,13 @@ pub fn dbm_after_walls(regular_state: &RoomState, pixel: Pos, point: &RadioPoint
   // Смотрим сколько стен пересекаются с лучём видимости.
 
   let mut wall_loss = 0f64;
-  // for wall in regular_state.walls.iter() {
+  let mut off = point.pos;
+  let mut iw = None;
+  while let Some((p, w)) = bsp.intersect(off, pixel, iw) {
+    wall_loss += w.damping;
+    (off, iw) = (p, Some(w));
+  }
+  // for wall in &room_layout.walls {
   //   if line_intersection((pixel, point.pos), (wall.a, wall.b)).is_some() {
   //     wall_loss += wall.damping;
   //   }
@@ -654,4 +613,242 @@ fn put(width: usize, dest: &mut [u8], x: isize, y: isize, r: u8, g: u8, b: u8) {
   // dest[offset  ] = r;
   // dest[offset+1] = g;
   // dest[offset+2] = b;
+}
+
+pub fn line_intersection(a: (Pos, Pos), b: (Pos, Pos)) -> Option<Pos> {
+  let da = a.1 - a.0;
+  let db = b.1 - b.0;
+  let ab0 = a.0 - b.0;
+  let s = (da.x * ab0.y - da.y * ab0.x) / (da.x * db.y - db.x * da.y);
+  let t = (db.x * ab0.y - db.y * ab0.x) / (da.x * db.y - db.x * da.y);
+
+  if s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0 {
+    return Some(Pos::new(a.0.x + (t * da.x), a.0.y + (t * da.y)));
+  }
+  return None;
+}
+
+pub struct BSP {
+  splitter: Wall,
+  front: Option<Box<BSP>>,
+  back: Option<Box<BSP>>,
+}
+impl BSP {
+  fn intersect(&self, r0: Pos, r1: Pos, ignore_wall: Option<&Wall>) -> Option<(Pos, &Wall)> {
+    let q = r0;
+    let p = self.splitter.a;
+    let s = r1 - r0;
+    let r = self.splitter.b - self.splitter.a;
+    // t = (q − p) × s / (r × s)
+    // u = (q − p) × r / (r × s)
+    let qp = q - p;
+    let rs = Pos::cross(&r, &s);
+    let rs_zero = rs.abs() < 0.00001;
+    let qps = Pos::cross(&qp, &s);
+    let qpr = Pos::cross(&qp, &r);
+
+    // const ray_dir = sub_vec(r1, r0)
+    // const segment_dir = sub_vec(self.splitter.b, self.splitter.a)
+    // const numerator = cross_prod(sub_vec(self.splitter.a, r0), ray_dir)
+    // const denominator = cross_prod(ray_dir, segment_dir)
+
+    // const numerator_is_zero = Math.abs(numerator) < 0.00001
+
+    // if (numerator < 0 || (numerator_is_zero && denominator > 0)) {
+    let (near, far) = match qpr < 0.0 || (qpr.abs() < 0.00001 && rs > 0.0) {
+      true  => (self.front.as_ref(), self.back.as_ref()),
+      false => (self.back.as_ref(), self.front.as_ref()),
+    };
+    if let Some(near) = near.as_ref() {
+      let hit = near.intersect(r0, r1, ignore_wall);
+      if hit.is_some() {
+        return hit;
+      }
+    }
+
+    // if the denominator is zero the lines are parallel
+    // if (Math.abs(denominator) < 0.00001) {
+    if rs_zero {
+      return None;
+    }
+
+    let t = qps / rs;
+    let u = qpr / rs;
+
+    // intersection is the point on a line segment where the line divides it
+    // const intersection = numerator / denominator
+
+    // segments that are not parallel and t is in (0, 1) should be divided
+    // if (0.0 < intersection && intersection < 1.0) {
+    //   return add_vec(self.splitter.a, mul_vec(segment_dir, intersection))
+    // }
+    if 0.0 < u && u < 1.0 && 0.0 < t && t < 1.0 && !ptr::eq(&self.splitter, ignore_wall.map(ptr::from_ref).unwrap_or(ptr::null())) {
+      return Some((q + (s * u), &self.splitter));
+    }
+
+    if let Some(far) = far.as_ref() {
+      return far.intersect(r0, r1, ignore_wall);
+    }
+
+    return None;
+  }
+
+  fn raycast(&self, r0: Pos, ray_dir: Pos, ignore_wall: Option<&Wall>) -> Option<(Pos, &Wall)> {
+    let q = r0;
+    let p = self.splitter.a;
+    let s = ray_dir;
+    let r = self.splitter.b - self.splitter.a;
+    // t = (q − p) × s / (r × s)
+    // u = (q − p) × r / (r × s)
+    let qp = q - p;
+    let rs = Pos::cross(&r, &s);
+    let qps = Pos::cross(&qp, &s);
+    let qpr = Pos::cross(&qp, &r);
+
+    // const ray_dir = sub_vec(r1, r0)
+    // const segment_dir = sub_vec(self.splitter.b, self.splitter.a)
+    // const numerator = cross_prod(sub_vec(self.splitter.a, r0), ray_dir)
+    // const denominator = cross_prod(ray_dir, segment_dir)
+
+    // const numerator_is_zero = Math.abs(numerator) < 0.00001
+
+    // if (numerator < 0 || (numerator_is_zero && denominator > 0)) {
+    let (near, far) = match qpr < 0.0 || (qpr.abs() < 0.00001 && rs > 0.0) {
+      true  => (self.front.as_ref(), self.back.as_ref()),
+      false => (self.back.as_ref(), self.front.as_ref()),
+    };
+    if let Some(near) = near.as_ref() {
+      let hit = near.raycast(r0, ray_dir, ignore_wall);
+      if hit.is_some() {
+        return hit;
+      }
+    }
+
+    // if the denominator is zero the lines are parallel
+    // if (Math.abs(denominator) < 0.00001) {
+    if rs.abs() < 0.00001 {
+      return None;
+    }
+
+    let t = qps / rs;
+    let u = qpr / rs;
+
+    // intersection is the point on a line segment where the line divides it
+    // const intersection = numerator / denominator
+
+    // segments that are not parallel and t is in (0, 1) should be divided
+    // if (0.0 < intersection && intersection < 1.0) {
+    //   return add_vec(self.splitter.a, mul_vec(segment_dir, intersection))
+    // }
+    if u > 0.0 && 0.0 < t && t < 1.0 && !ptr::eq(&self.splitter, ignore_wall.map(ptr::from_ref).unwrap_or(ptr::null())) {
+      return Some((q + (s * u), &self.splitter));
+    }
+
+    if let Some(far) = far.as_ref() {
+      return far.raycast(r0, ray_dir, ignore_wall);
+    }
+
+    return None;
+  }
+
+  pub fn new(layout: &RoomLayout) -> Arc<BSP> {
+    match Self::build_sub_tree(&mut rand::thread_rng(), &layout.walls) {
+      Some(bsp) => Arc::from(bsp),
+      None => Arc::new(BSP {
+        splitter: Wall { a: Pos::ZERO, b: Pos::ZERO, damping: 0.0 },
+        front: None,
+        back: None,
+      }),
+    }
+  }
+  fn build_sub_tree(rng: &mut impl Rng, segments: &[Wall]) -> Option<Box<BSP>> {
+    let mut best_splitter = segments.get(0)?;
+    let mut best_front = Vec::with_capacity(segments.len());
+    let mut best_back = Vec::with_capacity(segments.len());
+
+    {
+      let mut front = Vec::with_capacity(segments.len());
+      let mut back = Vec::with_capacity(segments.len());
+      for _ in 0..256 {
+        let splitter = Self::bsp_split(rng, segments, &mut front, &mut back);
+
+        let imbalance = (front.len() as isize - back.len() as isize).abs() as usize;
+        let best_imbalance = (best_front.len() as isize - best_back.len() as isize).abs() as usize;
+        let best_count = best_front.len() + best_back.len();
+        let new_count = front.len() + back.len();
+        if best_count == 0 || new_count < best_count || imbalance < best_imbalance {
+          mem::swap(&mut best_front, &mut front);
+          mem::swap(&mut best_back, &mut back);
+          front.clear();
+          back.clear();
+          best_splitter = splitter;
+        }
+        if imbalance < 2 && new_count + 1 == segments.len() {
+          break;
+        }
+      }
+    }
+
+    return Some(Box::new(BSP {
+      splitter: best_splitter.clone(),
+      front: Self::build_sub_tree(rng, &best_front),
+      back: Self::build_sub_tree(rng, &best_back),
+    }));
+  }
+  fn bsp_split<'a>(rng: &mut impl Rng, segments: &'a [Wall], front: &mut Vec<Wall>, back: &mut Vec<Wall>) -> &'a Wall {
+    let splitter = &segments[rng.gen_range(0..segments.len())];
+    let splitter_dir = splitter.b - splitter.a;
+
+    for segment in segments.iter() {
+      if ptr::eq(segment, splitter) {
+        continue
+      }
+      let segment_dir = segment.b - segment.a;
+      let numerator = Pos::cross(&(segment.a - splitter.a), &splitter_dir);
+      let denominator = Pos::cross(&splitter_dir, &segment_dir);
+
+      // if the denominator is zero the lines are parallel
+      let denominator_is_zero = denominator.abs() < 0.00001;
+
+      // segments are collinear if they are parallel and the numerator is zero
+      let numerator_is_zero = numerator.abs() < 0.00001;
+
+      if !denominator_is_zero {
+        // intersection is the point on a line segment where the line divides it
+        let intersection = numerator / denominator;
+
+        // segments that are not parallel and t is in (0, 1) should be divided
+        if 0.0 < intersection && intersection < 1.0 {
+          let intersection_point = segment.a + (segment_dir * intersection);
+
+          let mut r_segment = Wall {
+            a: segment.a,
+            b: intersection_point,
+            damping: segment.damping,
+          };
+
+          let mut l_segment = Wall {
+            a: intersection_point,
+            b: segment.b,
+            damping: segment.damping,
+          };
+
+          if numerator > 0.0 {
+            mem::swap(&mut l_segment, &mut r_segment);
+          }
+
+          front.push(r_segment);
+          back.push(l_segment);
+          continue
+        }
+      }
+
+      if numerator < 0.0 || (numerator_is_zero && denominator > 0.0) {
+        front.push(segment.clone())
+      } else {
+        back.push(segment.clone())
+      }
+    }
+    return splitter;
+  }
 }

@@ -794,16 +794,27 @@ function render_bsp() {
   // ctx.ellipse(ray1.x - camX, ray1.y - camY, 16, 16, 0, 0, 180)
   ctx.arc((ray1.x - offsetX) * zoom, (ray1.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
   ctx.arc((ray2.x - offsetX) * zoom, (ray2.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
-  const int = intersect(bsp, ray1, ray2)
-  if (int !== undefined) {
-    ctx.arc((int.x - offsetX) * zoom, (int.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
+  ctx.closePath();
+  ctx.fill()
+
+  let off = ray1
+  let iw = undefined
+  ctx.fillStyle = "#f00"
+  ctx.beginPath();
+  while (true) {
+    const int = intersect(bsp, off, ray2, iw)
+    if (int === undefined) {
+      break;
+    }
+    iw = int[1];
+    off = int[0];
+    ctx.arc((off.x - offsetX) * zoom, (off.y - offsetY) * zoom, 8, 0, 2 * Math.PI);
   }
   ctx.fill()
 }
 
 let bsp: BSP | undefined = undefined
-function intersect(bsp: BSP, r0: Point2d, r1: Point2d): Point2d | undefined {
-
+function intersect(bsp: BSP, r0: Point2d, r1: Point2d, iw: Segment | undefined): [Point2d, Segment] | undefined {
   const q = r0
   const p = bsp.splitter.a
   const s = sub_vec(r1, r0)
@@ -834,7 +845,69 @@ function intersect(bsp: BSP, r0: Point2d, r1: Point2d): Point2d | undefined {
     far = bsp.front
   }
   if (near !== undefined) {
-    const hit = intersect(near, r0, r1)
+    const hit = intersect(near, r0, r1, iw)
+    if (hit !== undefined) {
+      return hit
+    }
+  }
+
+  // if the denominator is zero the lines are parallel
+  // if (Math.abs(denominator) < 0.00001) {
+  if (rs_zero) {
+    return undefined
+  }
+
+  const t = qps / rs
+  const u = qpr / rs
+
+  // intersection is the point on a line segment where the line divides it
+  // const intersection = numerator / denominator
+
+  // segments that are not parallel and t is in (0, 1) should be divided
+  // if (0.0 < intersection && intersection < 1.0) {
+  //   return add_vec(bsp.splitter.a, mul_vec(segment_dir, intersection))
+  // }
+  if (0 < u && u < 1 && 0 < t && t < 1 && !Object.is(bsp.splitter, iw)) {
+    return [add_vec(q, mul_vec(s, u)), bsp.splitter]
+  }
+
+  if (far !== undefined) {
+    return intersect(far, r0, r1, iw)
+  }
+  return undefined
+}
+function raycast(bsp: BSP, r0: Point2d, ray_dir: Point2d): Point2d | undefined {
+  const q = r0
+  const p = bsp.splitter.a
+  const s = ray_dir
+  const r = sub_vec(bsp.splitter.b, bsp.splitter.a)
+  // t = (q − p) × s / (r × s)
+  // u = (q − p) × r / (r × s)
+  const qp = sub_vec(q, p)
+  const rs = cross_prod(r, s)
+  const rs_zero = Math.abs(rs) < 0.00001
+  const qps = cross_prod(qp, s)
+  const qpr = cross_prod(qp, r)
+
+  // const ray_dir = sub_vec(r1, r0)
+  // const segment_dir = sub_vec(bsp.splitter.b, bsp.splitter.a)
+  // const numerator = cross_prod(sub_vec(bsp.splitter.a, r0), ray_dir)
+  // const denominator = cross_prod(ray_dir, segment_dir)
+
+  // const numerator_is_zero = Math.abs(numerator) < 0.00001
+
+  let near: BSP | undefined
+  let far: BSP | undefined
+  // if (numerator < 0 || (numerator_is_zero && denominator > 0)) {
+  if (qpr < 0 || (Math.abs(qpr) < 0.00001 && rs > 0)) {
+    near = bsp.front
+    far = bsp.back
+  } else {
+    near = bsp.back
+    far = bsp.front
+  }
+  if (near !== undefined) {
+    const hit = raycast(near, r0, ray_dir)
     if (hit !== undefined) {
       return hit
     }
@@ -861,7 +934,7 @@ function intersect(bsp: BSP, r0: Point2d, r1: Point2d): Point2d | undefined {
   }
 
   if (far !== undefined) {
-    return intersect(far, r0, r1)
+    return raycast(far, r0, ray_dir)
   }
   return undefined
 }
