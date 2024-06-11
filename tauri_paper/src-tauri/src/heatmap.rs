@@ -11,7 +11,7 @@ use serde::Serialize;
 use rand::Rng;
 
 use crate::random_tries::{chop_ys, SignalStrength, BoundingBoxes};
-use crate::room_state::{Pos, Px, RadioPoint, RadioZone, RoomLayout, Wall, RANGE};
+use crate::room_state::{Pos, Px, RadioPoint, RadioZone, RoomLayout, Wall};
 
 /// 5 GHz
 const CARRYING_FREQ: f64 = 5f64;
@@ -206,7 +206,6 @@ F: Fn(Pos) -> (u8, u8, u8) + Send + Sync + 'static,
 
   let mut state = state_arc.write().unwrap();
   let state = state.deref_mut().deref_mut();
-
   save_image(bb.res, state, png_path);
 }
 
@@ -242,7 +241,7 @@ fn sum_dbm(dbm1: f64, dbm2: f64) -> f64 {
   }
 }
 
-fn do_calc_sinr_dbm(
+pub fn do_calc_sinr_dbm(
   room_layout: &RoomLayout,
   bsp: &BSP,
   next_guess: &SignalStrength,
@@ -253,7 +252,7 @@ fn do_calc_sinr_dbm(
   return powers_to_sinr(&dbms, zone);
 }
 
-fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {
+fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {/*
   // let signal_mw = mwts[zone.desired_point_id];
   // let all_signals_mw = mwts.iter().sum::<f64>();
   // let interference_mw = all_signals_mw - signal_mw;
@@ -276,7 +275,7 @@ fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {
   // let int_noise_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
   let sinr = mw_to_dbm(dbm_to_mw(signal_dbm) / dbm_to_mw(int_noise_dbm));
   // let sinr = mw_to_dbm(signal_mw / int_noise);
-
+*/
   // println!("signals: {:?}dbms", &dbms);
   // println!("sig: {}dbm", signal_dbm);
   // println!("int: {}dbm", interference_dbm);
@@ -285,6 +284,28 @@ fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {
   // println!("");
 
   /////////////////
+
+  // let signal_mw = mwts[zone.desired_point_id];
+  // let all_signals_mw = mwts.iter().sum::<f64>();
+  // let interference_mw = all_signals_mw - signal_mw;
+
+  let mut signal_mw = 0.0;
+  let mut interference_mw = 0.0;
+
+  for (i, dbm) in dbms.iter().enumerate() {
+    if i == zone.desired_point_id {
+      signal_mw += dbm_to_mw(*dbm);
+    } else {
+      interference_mw += dbm_to_mw(*dbm);
+    }
+  }
+
+  // signal - all signals = (s)/(s+i+n)
+  // max limit: 400mw на точке доступа
+  // min limit: -5db в худшей точке зоны.
+  let int_noise_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
+  // let sinr = mw_to_dbm(signal_mw / int_noise_mw);
+  let sinr = signal_mw / int_noise_mw;
 
 
   // let signal = mws[zone.desired_point_id];
@@ -342,15 +363,15 @@ pub async fn next_image(
 
   let mut active_best = Vec::new();
 
-  for ((((min, max, min_pwr, pos), zone), pow), point_pos) in min_max_sinr_per_zone.iter()
+  for ((((min, max, min_pwr, pos), zone), pow_mw), point_pos) in min_max_sinr_per_zone.iter()
     .zip(room_layout.radio_zones.iter())
-    .zip(next_guess.points_signal_dbm.iter())
+    .zip(next_guess.points_signal_mws.iter())
     .zip(room_layout.radio_points.iter())
   {
     active_best.push(ActiveBestZone {
       point_x: point_pos.pos.x,
       point_y: point_pos.pos.y,
-      point_pow_mw: dbm_to_mw(*pow),
+      point_pow_mw: *pow_mw,
       min_sinr_dbm: *min,
       min_sinr_x: pos.x,
       min_sinr_y: pos.y,
@@ -358,7 +379,7 @@ pub async fn next_image(
       g: zone.g,
       b: zone.b,
     });
-    println!("zone: r{} g{} b{} => SINR Min: {}, SINR Max: {}, min_pwr: {}, powers: {:?}", zone.r, zone.g, zone.b, min, max, min_pwr, next_guess.points_signal_dbm.as_slice())
+    println!("zone: r{} g{} b{} => SINR Min: {}, SINR Max: {}, min_pwr: {}, powers_mws: {:?}", zone.r, zone.g, zone.b, min, max, min_pwr, next_guess.points_signal_mws.as_slice())
   }
 
   let min_max_sinr_per_zone = Arc::<[_]>::from(min_max_sinr_per_zone);
@@ -369,8 +390,8 @@ pub async fn next_image(
     let min_max_sinr_per_zone = min_max_sinr_per_zone.clone();
     let bsp = bsp.clone();
     do_image(bb.clone(), "../rimg3.png", Arc::new(move |pix| {
-      let mut A = [ 0.0, 0.0, 0.0 ];
-      let mut B = [ 0.0, 0.0, 0.0 ];
+      let mut interp_a = [ 0.0, 0.0, 0.0 ];
+      let mut interp_b = [ 0.0, 0.0, 0.0 ];
       let iter = room_layout.radio_zones.iter()
         .zip(min_max_sinr_per_zone.iter());
       for (zone, (min_sinr, max_sinr, _min_pwr, _min_pos)) in iter {
@@ -384,14 +405,14 @@ pub async fn next_image(
 
         for i in 0..3 {
           let color = (255.0 * (1.0 - sinr_01)) + (zone_rgb[i] as f64 * sinr_01);
-          A[i] += color / d;
-          B[i] += 1.0 / d;
+          interp_a[i] += color / d;
+          interp_b[i] += 1.0 / d;
         }
       }
 
-      let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
-      let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
-      let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
+      let r = (interp_a[0] / interp_b[0]).clamp(0.0, 255.0) as u8;
+      let g = (interp_a[1] / interp_b[1]).clamp(0.0, 255.0) as u8;
+      let b = (interp_a[2] / interp_b[2]).clamp(0.0, 255.0) as u8;
 
       return (r, g, b);
     })).await;
@@ -404,8 +425,8 @@ pub async fn next_image(
     let bsp = bsp.clone();
     let bb = bb.clone();
     do_image(bb, "../rimg1.png", Arc::new(move |pix| {
-      let mut A = [ 0.0, 0.0, 0.0 ];
-      let mut B = [ 0.0, 0.0, 0.0 ];
+      let mut interp_a = [ 0.0, 0.0, 0.0 ];
+      let mut interp_b = [ 0.0, 0.0, 0.0 ];
       let iter = room_layout.radio_zones.iter()
         .zip(min_max_sinr_per_zone.iter());
       for (zone, (min_sinr, max_sinr, _min_pwr, _min_pos)) in iter {
@@ -442,14 +463,14 @@ pub async fn next_image(
           }
         }
         for i in 0..3 {
-          A[i] += rgb[i] as f64 / d;
-          B[i] += 1.0 / d;
+          interp_a[i] += rgb[i] as f64 / d;
+          interp_b[i] += 1.0 / d;
         }
       }
 
-      let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
-      let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
-      let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
+      let r = (interp_a[0] / interp_b[0]).clamp(0.0, 255.0) as u8;
+      let g = (interp_a[1] / interp_b[1]).clamp(0.0, 255.0) as u8;
+      let b = (interp_a[2] / interp_b[2]).clamp(0.0, 255.0) as u8;
 
       return (r, g, b);
     })).await;
@@ -462,14 +483,14 @@ pub async fn next_image(
     let bsp = bsp.clone();
     let bb = bb.clone();
     do_image(bb, "../rimg2.png", Arc::new(move |pix| {
-      let mut A = [ 0.0, 0.0, 0.0 ];
-      let mut B = [ 0.0, 0.0, 0.0 ];
+      let mut interp_a = [ 0.0, 0.0, 0.0 ];
+      let mut interp_b = [ 0.0, 0.0, 0.0 ];
       let mut dbms = calc_powers_dbm(&room_layout, &bsp, &next_guess, pix);
       let iter = dbms.iter_mut()
         .zip(min_max_sinr_per_zone.iter())
-        .zip(next_guess.points_signal_dbm.iter());
-      for ((dbm, (_min_sinr, _max_sinr, min_pwr, _min_pos)), power_dbm) in iter {
-        *dbm = scale_dbs2(*dbm, *min_pwr, *power_dbm, 1.0/4.0);
+        .zip(next_guess.points_signal_mws.iter());
+      for ((dbm, (_min_sinr, _max_sinr, min_pwr, _min_pos)), power_mw) in iter {
+        *dbm = scale_dbs2(*dbm, *min_pwr, mw_to_dbm(*power_mw), 1.0/4.0);
       }
       let iter = room_layout.radio_zones.iter()
         .zip(dbms.iter());
@@ -505,14 +526,14 @@ pub async fn next_image(
           }
         }
         for i in 0..3 {
-          A[i] += rgb[i] as f64 / d;
-          B[i] += 1.0 / d;
+          interp_a[i] += rgb[i] as f64 / d;
+          interp_b[i] += 1.0 / d;
         }
       }
 
-      let r = (A[0] / B[0]).clamp(0.0, 255.0) as u8;
-      let g = (A[1] / B[1]).clamp(0.0, 255.0) as u8;
-      let b = (A[2] / B[2]).clamp(0.0, 255.0) as u8;
+      let r = (interp_a[0] / interp_b[0]).clamp(0.0, 255.0) as u8;
+      let g = (interp_a[1] / interp_b[1]).clamp(0.0, 255.0) as u8;
+      let b = (interp_a[2] / interp_b[2]).clamp(0.0, 255.0) as u8;
 
       return (r, g, b);
     })).await;
@@ -525,51 +546,56 @@ pub async fn next_image(
   println!("drew");
 }
 
-fn calc_powers_dbm(layout: &RoomLayout, bsp: &BSP, signal_strength: &SignalStrength, pix: Pos) -> Box<[f64]> {
+pub fn calc_powers_dbm(layout: &RoomLayout, bsp: &BSP, signal_strength: &SignalStrength, pix: Pos) -> Box<[f64]> {
   layout.radio_points
     .iter()
-    .zip(signal_strength.points_signal_dbm.iter())
-    .map(|(point, power_dbm)| dbm_after_walls(layout, bsp, pix, point, *power_dbm))
+    .zip(signal_strength.points_signal_mws.iter())
+    .zip(signal_strength.points_directions_rad.iter())
+    .map(|((point, power_mw), point_dir)| dbm_after_walls(layout, bsp, pix, point, *power_mw, *point_dir))
     .collect::<Vec<_>>()
     .into_boxed_slice()
 }
 
-// Находит силу сигнала от точки в определённом пикселе.
-pub fn dbm_after_walls(room_layout: &RoomLayout, bsp: &BSP, pixel: Pos, point: &RadioPoint, power_dbm: f64) -> f64 {
-  let power_dbm = mw_to_dbm(200.0);
+pub fn clamp_rad(mut rad: f64) -> f64 {
+  while rad < -std::f64::consts::PI {
+    rad += 2.0 * std::f64::consts::PI;
+  }
+  while rad > std::f64::consts::PI {
+    rad -= 2.0 * std::f64::consts::PI;
+  }
+  return rad;
+}
 
-  let mut length = length(point.pos, pixel).max(1.0);
+// Находит силу сигнала от точки в определённом пикселе.
+pub fn dbm_after_walls(room_layout: &RoomLayout, bsp: &BSP, pixel: Pos, point: &RadioPoint, power_mw: f64, antena_dir: f64) -> f64 {
+  let power_dbm = mw_to_dbm(power_mw);
+
+  let length = length(point.pos, pixel).max(1.0);
+
+  let dir = pixel - point.pos;
+  let angle = f64::atan2(dir.y, dir.x) - antena_dir;
+  let a_div = clamp_rad(angle) / 65.0f64.to_radians();
+  let dir_gain = -f64::min(30.0, 12.0 * a_div * a_div);
 
   // Находим где находится точко относительно текущего пикселя
-  let mut path_loss = 38.3 * f64::log10(length) + 24.9 * f64::log10(CARRYING_FREQ) + 17.3;
+  let path_loss = 38.3 * f64::log10(length) + 24.9 * f64::log10(CARRYING_FREQ) + 17.3;
 
   // Смотрим сколько стен пересекаются с лучём видимости.
 
   let mut wall_loss = 0f64;
-  let mut off = point.pos;
-  let mut iw = None;
-  while let Some((p, w)) = bsp.intersect(off, pixel, iw) {
-    wall_loss += w.damping;
-    (off, iw) = (p, Some(w));
-  }
-  // for wall in &room_layout.walls {
-  //   if line_intersection((pixel, point.pos), (wall.a, wall.b)).is_some() {
-  //     wall_loss += wall.damping;
-  //   }
+  // let mut off = point.pos;
+  // let mut iw = None;
+  // while let Some((p, w)) = bsp.intersect(off, pixel, iw) {
+  //   wall_loss += w.damping;
+  //   (off, iw) = (p, Some(w));
   // }
+  for wall in &room_layout.walls {
+    if line_intersection((pixel, point.pos), (wall.a, wall.b)).is_some() {
+      wall_loss += wall.damping;
+    }
+  }
 
-  let dbm_ret = power_dbm - path_loss - wall_loss;
-  let mw_ret = dbm_to_mw(dbm_ret);
-  // println!("power_dbm: {power_dbm}dbm");
-  // println!("path_loss: {path_loss}dbm");
-  // println!("wall_loss: {wall_loss}dbm");
-  // println!("dbm_ret: {dbm_ret}dbm");
-  // println!("mw_ret: {mw_ret}mw");
-  // println!("mw_ret: {mw_ret}mw");
-  // println!("length: {length}m");
-  // println!("");
-
-  return dbm_ret;
+  return power_dbm - path_loss - wall_loss + dir_gain;
 }
 
 fn save_image<P: AsRef<Path>>(res: (usize, usize), scene: &mut [u8], path: P) {
