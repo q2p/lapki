@@ -536,63 +536,55 @@ function raf() {
   // }
 
   /// //////////////////////////////////////
-
+    
   // DRAW RADIOZONES
-  for (const zone of app_state.config.radio_zones) {
-    const zone2: Point2d[] = []
-    for (const p of zone.points) {
-      zone2.push({ x: p.x, y: p.y })
+
+  if (!running) {
+    for (const zone of app_state.config.radio_zones) {
+      const zone2: Point2d[] = []
+      for (const p of zone.points) {
+        zone2.push({ x: p.x, y: p.y })
+      }
+      const shift = 0.05
+      for (let i = 0; i !== zone2.length; i++) {
+        const a = zone2[i]
+        const b = zone2[(i + 1) % zone2.length]
+        const n = normalize({
+          x: b.y - a.y,
+          y: a.x - b.x,
+        })
+        a.x += n.x * shift
+        a.y += n.y * shift
+        b.x += n.x * shift
+        b.y += n.y * shift
+      }
+      ctx.beginPath()
+      ctx.fillStyle = `rgba(${zone.r}, ${zone.g}, ${zone.b}, 0.5)`
+      ctx.moveTo((zone2[0].x-offsetX)*zoom, (zone2[0].y -offsetY)*zoom)
+      for (let i = 1; i < zone.points.length; i++) {
+        ctx.lineTo((zone2[i].x-offsetX)*zoom, (zone2[i].y -offsetY)*zoom)
+      }
+      ctx.closePath()
+      ctx.fill();
     }
-    const shift = 0.05
-    for (let i = 0; i !== zone2.length; i++) {
-      const a = zone2[i]
-      const b = zone2[(i + 1) % zone2.length]
-      const n = normalize({
-        x: b.y - a.y,
-        y: a.x - b.x,
-      })
-      a.x += n.x * shift
-      a.y += n.y * shift
-      b.x += n.x * shift
-      b.y += n.y * shift
-    }
-    ctx.beginPath()
-    ctx.fillStyle = `rgba(${zone.r}, ${zone.g}, ${zone.b}, 0.5)`
-    ctx.moveTo((zone2[0].x-offsetX)*zoom, (zone2[0].y -offsetY)*zoom)
-    for (let i = 1; i < zone.points.length; i++) {
-      ctx.lineTo((zone2[i].x-offsetX)*zoom, (zone2[i].y -offsetY)*zoom)
-    }
-    ctx.closePath()
-    ctx.fill();
   }
+  
 
   // TODO: CHECK IF UNDEFINED OR NUL
   ctx.lineWidth = wall_thickness
   ctx.strokeStyle = "#000"
   ctx.fillStyle = "#000"
+  ctx.lineJoin = "round"
+  ctx.lineCap = "round"
   ctx.beginPath()
   for (const w of app_state.config.walls) {
     const xmin = Math.round((Math.min(w.a.x, w.b.x) - offsetX) * zoom)
     const xmax = Math.round((Math.max(w.a.x, w.b.x) - offsetX) * zoom)
     const ymin = Math.round((Math.min(w.a.y, w.b.y) - offsetY) * zoom)
     const ymax = Math.round((Math.max(w.a.y, w.b.y) - offsetY) * zoom)
-    // ctx.fillRect(
-    //   xmin - wall_thickness / 2,
-    //   ymin - wall_thickness / 2,
-    //   xmax - xmin + wall_thickness,
-    //   ymax - ymin + wall_thickness,
-    // )
     ctx.moveTo(xmin, ymin)
     ctx.lineTo(xmax, ymax)
     ctx.stroke()
-
-    // Раскомментить для угловатых стен.
-    // w.a.x = Math.round(w.a.x)
-    // w.a.y = Math.round(w.a.y)
-    // w.b.x = Math.round(w.b.x)
-    // w.b.y = Math.round(w.b.y)
-    // ctx.moveTo((w.a.x-offsetX)*zoom, (w.a.y-offsetY)*zoom);
-    // ctx.lineTo((w.b.x-offsetX)*zoom, (w.b.y-offsetY)*zoom);
   }
 
   if (drawing_state.added_walls.length > 0) {
@@ -726,7 +718,7 @@ function raf() {
     }
   }
 
-  render_bsp()
+  // render_bsp()
 }
 
 // https://groups.csail.mit.edu/graphics/classes/6.838/S98/meetings/m13/bsp.html#:~:text=Let%20v%20be,return%20hit

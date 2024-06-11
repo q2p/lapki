@@ -12,7 +12,6 @@ export type Wall = {
     a: Point2d,
     b: Point2d,
     damping: number,
-    // selected?: boolean,
 };
 
 export const MATERIALS = new Map([
