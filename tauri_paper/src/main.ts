@@ -325,7 +325,7 @@ let BB: BoundingBoxes = {
 
 window.addEventListener("keydown", async function(e) {
   if (e.code === "KeyS") {
-    image.src = "../rimg3.png"
+    image.src = `../rimg3.png?${Math.floor(Math.random() * 100000)}`
     center_view()
     BB = await get_bb()
   }
@@ -536,7 +536,7 @@ function raf() {
   // }
 
   /// //////////////////////////////////////
-    
+
   // DRAW RADIOZONES
 
   if (!running) {
@@ -568,7 +568,7 @@ function raf() {
       ctx.fill();
     }
   }
-  
+
 
   // TODO: CHECK IF UNDEFINED OR NUL
   ctx.lineWidth = wall_thickness

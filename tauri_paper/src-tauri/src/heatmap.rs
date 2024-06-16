@@ -609,10 +609,10 @@ fn save_image<P: AsRef<Path>>(res: (usize, usize), scene: &mut [u8], path: P) {
   encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455));
   // 1.0 / 2.2, scaled by 100000
   let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
-      (0.31270, 0.32900),
-      (0.64000, 0.33000),
-      (0.30000, 0.60000),
-      (0.15000, 0.06000)
+    (0.3127, 0.3290),
+    (0.6400, 0.3300),
+    (0.3000, 0.6000),
+    (0.1500, 0.0600)
   );
   encoder.set_source_chromaticities(source_chromaticities);
   let mut writer = encoder.write_header().unwrap();
