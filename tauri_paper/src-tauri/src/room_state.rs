@@ -70,6 +70,8 @@ pub struct RadioPoint {
   pub power: f64,
   pub power_min_mw: f64,
   pub power_max_mw: f64,
+  pub ang_min: f64,
+  pub ang_max: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

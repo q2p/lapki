@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -7,7 +8,7 @@ use std::time::{Duration, Instant};
 use rand::{Rng, SeedableRng};
 use serde::Serialize;
 
-use crate::heatmap::{self, bounding_box, do_calc_sinr_dbm, is_inside, pix_to_meter, BSP, clamp_rad};
+use crate::heatmap::{self, bounding_box, do_calc_sinr, is_inside, pix_to_meter, BSP, clamp_rad};
 use crate::room_state::{get_state, Pos, Px, RoomLayout};
 use crate::RUNNING;
 
@@ -51,39 +52,46 @@ pub struct SignalStrength {
   pub points_directions_rad: Vec<f64>,
 }
 
-#[derive(Debug)]
-struct ParamRanges {
-  /// mw min, max
-  pub points_limits_mws: Vec<(f64, f64)>,
-}
-
-fn solve_median(bb: &BoundingBoxes, signal_strength: &SignalStrength, layout: &RoomLayout, bsp: &BSP) -> f64 {
-  let mut sinrs = Vec::with_capacity(bb.res.0 * bb.res.1);
+fn solve_median(bb: &BoundingBoxes, signal_strength: &SignalStrength, layout: &RoomLayout, bsp: &BSP) -> (f64, Arc<[f64]>) {
+  if layout.radio_zones.is_empty() {
+    return (0.0, Arc::new([]));
+  }
+  let mut sinrs_per_zones: Vec<_> = (0..layout.radio_zones.len())
+    .map(|_| Vec::with_capacity(bb.res.0 * bb.res.1))
+    .collect();
   for y in 0..bb.res.1 {
     for x in 0..bb.res.0 {
       let pix = pix_to_meter(&bb, Px::new(x as isize, y as isize));
-      if let Some(z) = layout.radio_zones.iter().find(|zone| is_inside(pix, zone)) {
-        let sinr = do_calc_sinr_dbm(&layout, &bsp, &signal_strength, z, pix);
-        sinrs.push(sinr);
+      if let Some((i, z)) = layout.radio_zones.iter().enumerate().find(|(i, zone)| is_inside(pix, zone)) {
+        let sinr = do_calc_sinr(&layout, &bsp, &signal_strength, z, pix);
+        sinrs_per_zones[i].push(sinr);
       }
     }
   }
-  if sinrs.is_empty() {
-    return 0.0;
+  let mut min_lerp = 2.0;
+  let mut total_median = 0.0;
+  let mut median_sinrs = Vec::with_capacity(sinrs_per_zones.len());
+  for mut sinrs in sinrs_per_zones {
+    if sinrs.is_empty() {
+      return (0.0, Arc::new([]));
+    }
+    sinrs.sort_by(f64::total_cmp);
+    let median_idx = (sinrs.len() as f64 * 0.5) as usize;
+    let min_idx = (sinrs.len() as f64 * 0.05) as usize;
+    let median = sinrs[median_idx];
+    let min = sinrs[min_idx];
+    let lerp = (min - MIN_SINR) / (MIN_SINR * MIN_SINR_LERP);
+
+    median_sinrs.push(median);
+
+    total_median += median.powf(0.3);
+
+    if lerp < min_lerp {
+      min_lerp = lerp;
+    }
   }
-  sinrs.sort_by(f64::total_cmp);
-  let median_idx = (sinrs.len() as f64 * 0.5) as usize;
-  let min_idx = (sinrs.len() as f64 * 0.1) as usize;
-  let median = sinrs[median_idx];
-  let min = sinrs[min_idx];
-  let lerp = (min - MIN_SINR) / (MIN_SINR * MIN_SINR_LERP);
-  if lerp > 1.0 {
-    return median;
-  }
-  if lerp < 0.0 {
-    return -(lerp * lerp);
-  }
-  return median * lerp;
+  let ret = (1.0-f64::exp(-4.0*min_lerp)) * total_median;
+  return (ret, Arc::from(median_sinrs.into_boxed_slice()));
 }
 
 #[derive(Debug, Default, Clone, Serialize)]
@@ -138,7 +146,7 @@ pub async fn do_montecarlo() {
         {
           *RENDERING_BB.lock().unwrap() = BoundingBoxes::clone(&ns.render);
         }
-        heatmap::next_image(ns.render.clone(), ns.layout.clone(), ns.bsp.clone(), ns.signal_strength.clone()).await;
+        heatmap::next_image(ns.render.clone(), ns.layout.clone(), ns.bsp.clone(), ns.signal_strength.clone(), ns.median_sinrs.clone()).await;
       }
     });
   }
@@ -163,7 +171,6 @@ pub async fn do_montecarlo() {
       let mut bsp = BSP::new(&layout);
       let mut measure = Arc::new(BoundingBoxes::default());
       let mut render = Arc::new(BoundingBoxes::default());
-      let mut limits = Arc::new(ParamRanges { points_limits_mws: vec![] });
 
       let mut iterations = 0;
 
@@ -185,19 +192,16 @@ pub async fn do_montecarlo() {
             measure = Arc::new(BoundingBoxes::new(layout.walls.iter().flat_map(|w| [&w.a, &w.b]), 0.5, 128*128));
             render = Arc::new(BoundingBoxes::new(layout.walls.iter().flat_map(|w| [&w.a, &w.b]), 2.0, 2048*2048));
             bsp = BSP::new(&layout);
-            limits = Arc::new(ParamRanges {
-              points_limits_mws: layout.radio_points.iter().map(|p| (p.power_min_mw, p.power_max_mw)).collect(),
-            });
           }
           tokio::task::yield_now().await;
         }
         iterations += 1;
         let next_guess = SignalStrength {
-          points_signal_mws: limits.points_limits_mws.iter().map(|(min, max)| rng.gen_range(*min..=*max)).collect(),
-          points_directions_rad: limits.points_limits_mws.iter().map(|_| rng.gen_range(-std::f64::consts::PI..=std::f64::consts::PI)).collect(),
+          points_signal_mws: layout.radio_points.iter().map(|p| rng.gen_range(p.power_min_mw..=p.power_max_mw)).collect(),
+          points_directions_rad: layout.radio_points.iter().map(|p| rng.gen_range(p.ang_min..=p.ang_max)).collect(),
         };
 
-        let sinr = solve_median(&measure, &next_guess, &layout, &bsp);
+        let (sinr, median_sinrs) = solve_median(&measure, &next_guess, &layout, &bsp);
         if sinr > local_max_sinr {
           local_max_sinr = sinr;
           let mut gms = global_max_sinr.lock().unwrap();
@@ -211,7 +215,7 @@ pub async fn do_montecarlo() {
               measure: measure.clone(),
               render: render.clone(),
               max_value: sinr,
-              limits: limits.clone(),
+              median_sinrs,
             }))).unwrap();
           }
         }
@@ -226,9 +230,9 @@ struct Exch {
   layout: Arc<RoomLayout>,
   bsp: Arc<BSP>,
   signal_strength: Arc<SignalStrength>,
-  limits: Arc<ParamRanges>,
   measure: Arc<BoundingBoxes>,
   render: Arc<BoundingBoxes>,
+  median_sinrs: Arc<[f64]>
 }
 
 const MOMENTUM_FACTOR: f64 = 0.95;
@@ -274,19 +278,19 @@ pub async fn do_nesterov(mut best_rx: tokio::sync::watch::Receiver<Option<Arc<Ex
           iterations += 1;
 
           let mut look_ahead = position.clone();
-          for i in 0..exch.limits.points_limits_mws.len() {
+          for i in 0..exch.layout.radio_points.len() {
             look_ahead.points_signal_mws[i] += MOMENTUM_FACTOR * velocity.points_signal_mws[i];
           }
 
-          let mut handles = Vec::with_capacity(2 * exch.limits.points_limits_mws.len());
-          for i in 0..exch.limits.points_limits_mws.len() {
+          let mut handles = Vec::with_capacity(2 * exch.layout.radio_points.len());
+          for i in 0..exch.layout.radio_points.len() {
             for dir in [-0.01, 0.01] {
               let mut ss = look_ahead.clone();
               let exch = exch.clone();
               handles.push(tokio::task::spawn(async move {
                 let ss_ref = &mut ss.points_signal_mws[i];
-                let limit = &exch.limits.points_limits_mws[i];
-                *ss_ref = f64::clamp(*ss_ref + dir, limit.0, limit.1);
+                let limit = &exch.layout.radio_points[i];
+                *ss_ref = f64::clamp(*ss_ref + dir, limit.power_min_mw, limit.power_max_mw);
                 let value = solve_median(&exch.measure, &ss, &exch.layout, &exch.bsp);
                 // TODO: try_send_best_sinr(optimized_value, &ss);
                 return (ss, value)
@@ -310,7 +314,7 @@ pub async fn do_nesterov(mut best_rx: tokio::sync::watch::Receiver<Option<Arc<Ex
             points_directions_rad: vec![0.0; position.points_directions_rad.len()],
           };
           for handle in handles.into_iter() {
-            let (ss, value) = handle.await.unwrap();
+            let (ss, (value, _)) = handle.await.unwrap();
             assert_eq!(ss.points_signal_mws.len(), grad.points_signal_mws.capacity());
             for i in 0..grad.points_signal_mws.capacity() {
               grad.points_signal_mws[i] += value / (ss.points_signal_mws[i] - exch.signal_strength.points_signal_mws[i]);
@@ -319,7 +323,7 @@ pub async fn do_nesterov(mut best_rx: tokio::sync::watch::Receiver<Option<Arc<Ex
           }
 
           let mut small_velocity = true;
-          for i in 0..exch.limits.points_limits_mws.len() {
+          for i in 0..exch.layout.radio_points.len() {
             {
               let vel = &mut velocity.points_signal_mws[i];
               let grad = grad.points_signal_mws[i];
@@ -351,7 +355,7 @@ pub async fn do_nesterov(mut best_rx: tokio::sync::watch::Receiver<Option<Arc<Ex
 }
 
 const MIN_SINR_LERP: f64 = 0.1;
-const MIN_SINR: f64 = 0.9;
+pub const MIN_SINR: f64 = 0.9;
 
 pub fn chop_ys(y_max: usize, mut slices: usize) -> impl Iterator<Item = (usize, usize, usize)> {
   slices = slices.min(y_max);

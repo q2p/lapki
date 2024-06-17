@@ -331,7 +331,7 @@ window.addEventListener("keydown", async function(e) {
   }
 })
 
-function mk_tooltip(x: number, y: number, color: string, text: string) {
+function mk_tooltip(x: number, y: number, color: string, ...text: string[]) {
   const img = document.createElement("div")
   img.className = "legend_point"
   img.style.position = "absolute"
@@ -343,10 +343,14 @@ function mk_tooltip(x: number, y: number, color: string, text: string) {
 
   const box = document.createElement("div")
   box.className = "legend_tooltip"
-  box.textContent = text
+  for (const t of text) {
+    box.appendChild(document.createTextNode(t))
+    box.appendChild(document.createElement("br"))
+  }
   box.style.position = "absolute"
   box.style.background = "rgba(33,33,33,0.7)"
   box.style.color = "white"
+  box.style.whiteSpace = "nowrap"
   box.style.borderRadius = "5px"
 
   document.body.appendChild(box)
@@ -366,13 +370,8 @@ function update_active_els(a: ActiveBest[]) {
       el.point_x,
       el.point_y,
       color,
-      `Pow: ${el.point_pow_mw.toPrecision(4)}mw`,
-    )
-    mk_tooltip(
-      el.min_sinr_x,
-      el.min_sinr_y,
-      color,
-      `Min SINR: ${el.min_sinr_dbm.toPrecision(4)}`,
+      `Pow: ${el.point_pow_mw.toPrecision(4)}mw.`,
+      `Median SINR: ${el.median_sinr_dbm.toPrecision(4)}db.`,
     )
   }
 }

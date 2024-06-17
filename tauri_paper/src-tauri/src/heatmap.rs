@@ -1,3 +1,4 @@
+use std::f64::consts::PI;
 use std::fs::OpenOptions;
 use std::io::BufWriter;
 use std::num::NonZeroUsize;
@@ -10,7 +11,7 @@ use serde::Serialize;
 
 use rand::Rng;
 
-use crate::random_tries::{chop_ys, SignalStrength, BoundingBoxes};
+use crate::random_tries::{chop_ys, BoundingBoxes, SignalStrength, MIN_SINR};
 use crate::room_state::{Pos, Px, RadioPoint, RadioZone, RoomLayout, Wall};
 
 /// 5 GHz
@@ -214,9 +215,7 @@ pub struct ActiveBestZone {
   point_x: f64,
   point_y: f64,
   point_pow_mw: f64,
-  min_sinr_dbm: f64,
-  min_sinr_x: f64,
-  min_sinr_y: f64,
+  median_sinr_dbm: f64,
   r: u8,
   g: u8,
   b: u8,
@@ -241,7 +240,7 @@ fn sum_dbm(dbm1: f64, dbm2: f64) -> f64 {
   }
 }
 
-pub fn do_calc_sinr_dbm(
+pub fn do_calc_sinr(
   room_layout: &RoomLayout,
   bsp: &BSP,
   next_guess: &SignalStrength,
@@ -252,43 +251,7 @@ pub fn do_calc_sinr_dbm(
   return powers_to_sinr(&dbms, zone);
 }
 
-fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {/*
-  // let signal_mw = mwts[zone.desired_point_id];
-  // let all_signals_mw = mwts.iter().sum::<f64>();
-  // let interference_mw = all_signals_mw - signal_mw;
-
-  let mut signal_dbm = -200.0;
-  let mut interference_dbm = -200.0;
-
-  for (i, dbm) in dbms.iter().enumerate() {
-    if i == zone.desired_point_id {
-      signal_dbm = sum_dbm(signal_dbm, *dbm);
-    } else {
-      interference_dbm = sum_dbm(interference_dbm, *dbm);
-    }
-  }
-
-  // signal - all signals = (s)/(s+i+n)
-  // max limit: 400mw на точке доступа
-  // min limit: -5db в худшей точке зоны.
-  let int_noise_dbm = sum_dbm(interference_dbm, STATIC_NOISE_DBM);
-  // let int_noise_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
-  let sinr = mw_to_dbm(dbm_to_mw(signal_dbm) / dbm_to_mw(int_noise_dbm));
-  // let sinr = mw_to_dbm(signal_mw / int_noise);
-*/
-  // println!("signals: {:?}dbms", &dbms);
-  // println!("sig: {}dbm", signal_dbm);
-  // println!("int: {}dbm", interference_dbm);
-  // println!("int+noise: {}dbm", int_noise_dbm);
-  // println!("sinr: {}", sinr);
-  // println!("");
-
-  /////////////////
-
-  // let signal_mw = mwts[zone.desired_point_id];
-  // let all_signals_mw = mwts.iter().sum::<f64>();
-  // let interference_mw = all_signals_mw - signal_mw;
-
+fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {
   let mut signal_mw = 0.0;
   let mut interference_mw = 0.0;
 
@@ -300,21 +263,7 @@ fn powers_to_sinr(dbms: &[f64], zone: &RadioZone) -> f64 {/*
     }
   }
 
-  // signal - all signals = (s)/(s+i+n)
-  // max limit: 400mw на точке доступа
-  // min limit: -5db в худшей точке зоны.
-  let int_noise_mw = interference_mw + dbm_to_mw(STATIC_NOISE_DBM);
-  // let sinr = mw_to_dbm(signal_mw / int_noise_mw);
-  let sinr = signal_mw / int_noise_mw;
-
-
-  // let signal = mws[zone.desired_point_id];
-  // let all_signals = mws.iter().sum::<f64>();
-  // let interference = all_signals - signal;
-  // signal - all signals = (s)/(s+i+n)
-  // max limit: 400mw на точке доступа
-  // min limit: -5db в худшей точке зоны.
-  // let sinr = mw_to_dbm(signal / (interference + dbm_to_mw(STATIC_NOISE_DBM)));
+  let sinr = signal_mw / (interference_mw + dbm_to_mw(STATIC_NOISE_DBM));
 
   return sinr;
 }
@@ -325,6 +274,7 @@ pub async fn next_image(
   room_layout: Arc<RoomLayout>,
   bsp: Arc<BSP>,
   next_guess: Arc<SignalStrength>,
+  median_sinrs: Arc<[f64]>
 ) {
   let mut min_max_sinr_per_zone = vec![(f64::MAX, f64::MIN, f64::MAX, Pos { x: 0.0, y: 0.0 }); room_layout.radio_zones.len()].into_boxed_slice();
   {
@@ -363,18 +313,17 @@ pub async fn next_image(
 
   let mut active_best = Vec::new();
 
-  for ((((min, max, min_pwr, pos), zone), pow_mw), point_pos) in min_max_sinr_per_zone.iter()
+  for (((((min, max, min_pwr, pos), zone), pow_mw), point_pos), median_sinr) in min_max_sinr_per_zone.iter()
     .zip(room_layout.radio_zones.iter())
     .zip(next_guess.points_signal_mws.iter())
     .zip(room_layout.radio_points.iter())
+    .zip(median_sinrs.iter())
   {
     active_best.push(ActiveBestZone {
       point_x: point_pos.pos.x,
       point_y: point_pos.pos.y,
       point_pow_mw: *pow_mw,
-      min_sinr_dbm: *min,
-      min_sinr_x: pos.x,
-      min_sinr_y: pos.y,
+      median_sinr_dbm: mw_to_dbm(*median_sinr),
       r: zone.r,
       g: zone.g,
       b: zone.b,
@@ -392,16 +341,35 @@ pub async fn next_image(
     do_image(bb.clone(), "../rimg3.png", Arc::new(move |pix| {
       let mut interp_a = [ 0.0, 0.0, 0.0 ];
       let mut interp_b = [ 0.0, 0.0, 0.0 ];
+      let target_zone = room_layout.radio_zones.iter().find(|zone| is_inside(pix, zone));
       let iter = room_layout.radio_zones.iter()
         .zip(min_max_sinr_per_zone.iter());
       for (zone, (min_sinr, max_sinr, _min_pwr, _min_pos)) in iter {
+        let d;
+        if let Some(target_zone) = target_zone {
+          if !ptr::addr_eq(target_zone, zone) {
+            continue;
+          }
+          d = 1.0;
+        } else {
+          // d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
+          d = distance_to_zone(pix, zone).max(0.00001);
+        }
         let zone_rgb = [zone.r, zone.g, zone.b];
-        // let d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
-        let d = distance_to_zone(pix, zone).max(0.00001);
 
-        let sinr = do_calc_sinr_dbm(&room_layout, &bsp, &next_guess, zone, pix);
-        let sinr_01 = scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0);
-        let sinr_01 = (sinr_01 * 12.0).round() / 12.0;
+        let sinr = do_calc_sinr(&room_layout, &bsp, &next_guess, zone, pix);
+
+        let mut sinr_01;
+        if target_zone.is_some() && sinr < MIN_SINR {
+          if (((pix.y-pix.x)/0.02).rem_euclid(1.0) < 0.5) {
+            sinr_01 = 1.0;
+          } else {
+            sinr_01 = 0.0;
+          }
+        } else {
+          sinr_01 = scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0);
+          sinr_01 = (sinr_01 * 12.0).round() / 12.0;
+        }
 
         for i in 0..3 {
           let color = (255.0 * (1.0 - sinr_01)) + (zone_rgb[i] as f64 * sinr_01);
@@ -429,11 +397,20 @@ pub async fn next_image(
       let mut interp_b = [ 0.0, 0.0, 0.0 ];
       let iter = room_layout.radio_zones.iter()
         .zip(min_max_sinr_per_zone.iter());
+      let target_zone = room_layout.radio_zones.iter().find(|zone| is_inside(pix, zone));
       for (zone, (min_sinr, max_sinr, _min_pwr, _min_pos)) in iter {
-        // let d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
-        let d = distance_to_zone(pix, zone).max(0.00001);
+        let d;
+        if let Some(target_zone) = target_zone {
+          if !ptr::addr_eq(target_zone, zone) {
+            continue;
+          }
+          d = 1.0;
+        } else {
+          // d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
+          d = distance_to_zone(pix, zone).max(0.00001);
+        }
 
-        let sinr = do_calc_sinr_dbm(&room_layout, &bsp, &next_guess, zone, pix);
+        let sinr = do_calc_sinr(&room_layout, &bsp, &next_guess, zone, pix);
         let s = scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0);
 
         // Делаем плавные переходы ступенчатыми (40 ступеней)
@@ -489,18 +466,27 @@ pub async fn next_image(
       let iter = dbms.iter_mut()
         .zip(min_max_sinr_per_zone.iter())
         .zip(next_guess.points_signal_mws.iter());
-      for ((dbm, (_min_sinr, _max_sinr, min_pwr, _min_pos)), power_mw) in iter {
-        *dbm = scale_dbs2(*dbm, *min_pwr, mw_to_dbm(*power_mw), 1.0/4.0);
+      for ((dbm, (_min_sinr, _max_sinr, min_pwr_dbm, _min_pos)), power_mw) in iter {
+        *dbm = scale_dbs2(*dbm, *min_pwr_dbm, mw_to_dbm(*power_mw), 0.5);
       }
+      let target_zone = room_layout.radio_zones.iter().find(|zone| is_inside(pix, zone));
       let iter = room_layout.radio_zones.iter()
         .zip(dbms.iter());
       for (zone, s) in iter {
-        // let d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
-        let d = distance_to_zone(pix, zone).max(0.00001);
+        let d;
+        if let Some(target_zone) = target_zone {
+          if !ptr::addr_eq(target_zone, zone) {
+            continue;
+          }
+          d = 1.0;
+        } else {
+          // d = distance_to_zone(pix, zone).powf(2.0).max(0.00001);
+          d = distance_to_zone(pix, zone).max(0.00001);
+        }
 
         // Делаем плавные переходы ступенчатыми (40 ступеней)
-        // let s = (s * 40.0).round() / 40.0;
-        let s = *s;
+        let s = (*s * 40.0).round() / 40.0;
+        let s = 1.0 - s;
         // Градиент переходов между цветами
         const GRAD: [Segment; 8] = [
           Segment { t: -1.000, r: 0xFF, g: 0x00, b: 0x00, },
@@ -557,13 +543,14 @@ pub fn calc_powers_dbm(layout: &RoomLayout, bsp: &BSP, signal_strength: &SignalS
 }
 
 pub fn clamp_rad(mut rad: f64) -> f64 {
-  while rad < -std::f64::consts::PI {
-    rad += 2.0 * std::f64::consts::PI;
+  const PI2: f64 = 2.0 * PI;
+  if rad < -PI {
+    rad + PI2 * (-rad / PI2 + 0.5).floor()
+  } else if rad > PI {
+    rad - PI2 * ( rad / PI2 + 0.5).floor()
+  } else {
+    rad
   }
-  while rad > std::f64::consts::PI {
-    rad -= 2.0 * std::f64::consts::PI;
-  }
-  return rad;
 }
 
 // Находит силу сигнала от точки в определённом пикселе.
@@ -573,9 +560,9 @@ pub fn dbm_after_walls(room_layout: &RoomLayout, bsp: &BSP, pixel: Pos, point: &
   let length = length(point.pos, pixel).max(1.0);
 
   let dir = pixel - point.pos;
-  let angle = f64::atan2(dir.y, dir.x) - antena_dir;
-  let a_div = clamp_rad(angle) / 65.0f64.to_radians();
-  let dir_gain = -f64::min(30.0, 12.0 * a_div * a_div);
+  let angle = clamp_rad(f64::atan2(dir.y, dir.x) - antena_dir);
+  let a_div = angle / 65.0f64.to_radians();
+  let dir_loss = f64::min(30.0, 12.0 * a_div * a_div);
 
   // Находим где находится точко относительно текущего пикселя
   let path_loss = 38.3 * f64::log10(length) + 24.9 * f64::log10(CARRYING_FREQ) + 17.3;
@@ -595,7 +582,7 @@ pub fn dbm_after_walls(room_layout: &RoomLayout, bsp: &BSP, pixel: Pos, point: &
     }
   }
 
-  return power_dbm - path_loss - wall_loss + dir_gain;
+  return power_dbm - path_loss - wall_loss - dir_loss;
 }
 
 fn save_image<P: AsRef<Path>>(res: (usize, usize), scene: &mut [u8], path: P) {
