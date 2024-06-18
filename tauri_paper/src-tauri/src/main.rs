@@ -1,4 +1,3 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::fs::File;
@@ -15,7 +14,7 @@ mod random_tries;
 mod room_state;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
-static PATH: &str = "5g_planner_config.json";
+const PATH: &str = "5g_planner_config.json";
 static APPCONFIG: Mutex<AppConfig> = Mutex::new(AppConfig {
     latest_config: Option::None,
 });
@@ -91,12 +90,6 @@ fn app_menu() -> Menu {
 fn main() {
   load_app_config();
     tauri::Builder::default()
-        // .on_page_load(|window, _payload| {
-        //   let payload = BootPayload { drives: scan_drive() };
-        //   window
-        //     .emit("boot", Some(payload))
-        //     .expect("failed to emit event");
-        // })
         .menu(app_menu())
         .on_menu_event(|event| {
             let app_handle = event.window().app_handle();

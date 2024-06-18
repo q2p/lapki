@@ -361,7 +361,7 @@ pub async fn next_image(
 
         let mut sinr_01;
         if target_zone.is_some() && sinr < MIN_SINR {
-          if (((pix.y-pix.x)/0.02).rem_euclid(1.0) < 0.5) {
+          if ((pix.y-pix.x)/0.02).rem_euclid(1.0) < 0.5 {
             sinr_01 = 1.0;
           } else {
             sinr_01 = 0.0;
@@ -411,10 +411,17 @@ pub async fn next_image(
         }
 
         let sinr = do_calc_sinr(&room_layout, &bsp, &next_guess, zone, pix);
-        let s = scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0);
+        let s;
+        if target_zone.is_some() && sinr < MIN_SINR {
+          if ((pix.y-pix.x)/0.02).rem_euclid(1.0) < 0.5 {
+            s = 1.0;
+          } else {
+            s = 0.0;
+          }
+        } else {
+          s = (scale_dbs2(sinr, *min_sinr, *max_sinr, 1.0) * 40.0).round() / 40.0;
+        }
 
-        // Делаем плавные переходы ступенчатыми (40 ступеней)
-        let s = (s * 40.0).round() / 40.0;
         // Градиент переходов между цветами
         const GRAD: [Segment; 8] = [
           Segment { t: -1.000, r: 0xFF, g: 0xFF, b: 0xFF, },
@@ -542,7 +549,7 @@ pub fn calc_powers_dbm(layout: &RoomLayout, bsp: &BSP, signal_strength: &SignalS
     .into_boxed_slice()
 }
 
-pub fn clamp_rad(mut rad: f64) -> f64 {
+pub fn clamp_rad(rad: f64) -> f64 {
   const PI2: f64 = 2.0 * PI;
   if rad < -PI {
     rad + PI2 * (-rad / PI2 + 0.5).floor()

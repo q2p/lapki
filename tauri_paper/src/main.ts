@@ -323,9 +323,11 @@ let BB: BoundingBoxes = {
   wh: {x: 0, y: 0}
 }
 
+let rimg_id = 0;
 window.addEventListener("keydown", async function(e) {
   if (e.code === "KeyS") {
-    image.src = `../rimg3.png?${Math.floor(Math.random() * 100000)}`
+    rimg_id = (rimg_id + 1) % 3;
+    image.src = `../rimg${1 + rimg_id}.png?${Math.floor(Math.random() * 100000)}`
     center_view()
     BB = await get_bb()
   }
